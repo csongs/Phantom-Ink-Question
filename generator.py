@@ -410,6 +410,10 @@ class PhantomInkGenerator:
                 for i, q in enumerate(question_set.questions):
                     if any(c in q.reply for c in question_set.answer):
                         bad.add(i)
+                # 空回答
+                for i, q in enumerate(question_set.questions):
+                    if not q.reply.strip():
+                        bad.add(i)
 
                 if not bad:
                     break  # 全部 OK
@@ -419,6 +423,8 @@ class PhantomInkGenerator:
                     for i in sorted(bad):
                         reason = []
                         r = question_set.questions[i].reply
+                        if not r.strip():
+                            reason.append("空回答")
                         if replies.count(r) > 1:
                             reason.append("回答重複")
                         if any(c in r for c in question_set.answer):
