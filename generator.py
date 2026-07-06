@@ -22,13 +22,12 @@ from models import (
     SimulationRound,
 )
 from prompts import (
-    DESIGNER_SYSTEM_PROMPT,
-    DESIGNER_USER_PROMPT,
     REVIEWER_SYSTEM_PROMPT,
     REVIEWER_USER_PROMPT,
     SIMULATOR_SYSTEM_PROMPT,
     SIMULATOR_USER_PROMPT,
     CATEGORY_HINTS,
+    format_designer_prompt,
 )
 from bopomofo import to_bopomofo_cells, count_bopomofo_cells
 
@@ -67,9 +66,10 @@ class PhantomInkGenerator:
 
     def design_questions(self, answer: str) -> QuestionSet:
         """階段一：出題 — AI 扮演出題老師產生七道問答"""
+        system, user = format_designer_prompt(answer)
         messages = [
-            {"role": "system", "content": DESIGNER_SYSTEM_PROMPT},
-            {"role": "user", "content": DESIGNER_USER_PROMPT.format(answer=answer)},
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
         ]
 
         raw = self._json_chat(messages, temperature=0.7)
