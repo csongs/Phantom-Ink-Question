@@ -70,10 +70,18 @@ class PhantomInkGenerator:
 
     @staticmethod
     def _post_process(qs: QuestionSet) -> QuestionSet:
-        """後處理：簡轉繁 + 修正注音"""
+        """後處理：簡轉繁 + 修正標點符號"""
+        punct_map = str.maketrans({
+            ".": "。",
+            "?": "？",
+            ",": "，",
+            ":": "：",
+            ";": "；",
+            "!": "！",
+        })
         for q in qs.questions:
-            q.question = convert(q.question, "zh-tw")
-            q.reply = convert(q.reply, "zh-tw")
+            q.question = convert(q.question, "zh-tw").translate(punct_map)
+            q.reply = convert(q.reply, "zh-tw").translate(punct_map)
         return qs
 
     # ── Phase 1: 出題 ──────────────────────
