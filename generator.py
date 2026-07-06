@@ -55,6 +55,7 @@ class PhantomInkGenerator:
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
+            response_format={"type": "json_object"},
         )
         return json.loads(reply)
 
