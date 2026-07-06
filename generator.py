@@ -84,7 +84,7 @@ class PhantomInkGenerator:
 
     @staticmethod
     def _post_process(qs: QuestionSet) -> QuestionSet:
-        """後處理：簡轉繁 + 修正標點符號"""
+        """後處理：簡轉繁 + 修正標點符號 + 確保回答以句號結尾"""
         punct_map = str.maketrans({
             ".": "。",
             "?": "？",
@@ -96,6 +96,9 @@ class PhantomInkGenerator:
         for q in qs.questions:
             q.question = convert(q.question, "zh-tw").translate(punct_map)
             q.reply = convert(q.reply, "zh-tw").translate(punct_map)
+            # 確保回答以句號結尾（句號在遊戲中算一格墨水）
+            if q.reply and not q.reply.rstrip().endswith("。"):
+                q.reply = q.reply.rstrip() + "。"
         return qs
 
     # ── Phase 1: 出題 ──────────────────────
