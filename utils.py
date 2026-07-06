@@ -133,8 +133,7 @@ def print_question_set(data: QuestionSetWithMeta) -> None:
     for i, q in enumerate(data.questions):
         bpmf = to_bopomofo(q.reply)
         cells = count_bopomofo_cells(q.reply)
-        tag = " [自創]" if q.is_custom else ""
-        print(f"\n  Q{i+1}. {q.question}{tag}")
+        print(f"\n  Q{i+1}. {q.question}")
         print(f"  A{i+1}. {q.reply}")
         print(f"        注音：{bpmf}（{cells}格）")
 

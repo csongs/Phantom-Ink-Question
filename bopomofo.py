@@ -97,5 +97,5 @@ def has_bopomofo(text: str) -> bool:
     # 嘗試轉換
     bpmf = to_bopomofo(text)
     # 如果有中文字但 bpmf 不含注音符號，代表失敗
-    bpmf_chars = re.findall(r'[ㄅ-ㄩˇˊˋˉ]', bpmf)
+    bpmf_chars = re.findall(r'[ㄅ-ㄩˇˊˋˉ˙]', bpmf)
     return len(bpmf_chars) > 0

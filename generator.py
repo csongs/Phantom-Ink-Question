@@ -12,6 +12,8 @@ AI 驅動的題目生成器。
 import json
 from typing import Optional
 
+from zhconv import convert
+
 from backends import HFInferenceBackend
 from models import (
     QuestionItem,
@@ -64,6 +66,16 @@ class PhantomInkGenerator:
         )
         return json.loads(reply)
 
+    # ── 後處理 ──────────────────────────
+
+    @staticmethod
+    def _post_process(qs: QuestionSet) -> QuestionSet:
+        """後處理：簡轉繁 + 修正注音"""
+        for q in qs.questions:
+            q.question = convert(q.question, "zh-tw")
+            q.reply = convert(q.reply, "zh-tw")
+        return qs
+
     # ── Phase 1: 出題 ──────────────────────
 
     def design_questions(self, answer: str, answer_mode: str = "ai", num_questions: int = 7) -> QuestionSet:
@@ -87,7 +99,21 @@ class PhantomInkGenerator:
 
         qs = QuestionSet(answer=raw["answer"], questions=questions)
 
-        # 回答重複檢查（七題之間）
+        # 後處理：簡轉繁
+        self._post_process(qs)
+
+        # 題庫檢查 + 標記自創題（後處理後才檢查）
+        for q in qs.questions:
+            if q.question not in QUESTION_BANK:
+                q.is_custom = True
+
+        unknown = [q.question for q in qs.questions if q.is_custom]
+        if unknown:
+            print("⚠️  以下題目不在題庫中（已標記為自創題）：")
+            for uq in unknown:
+                print(f"     ✗ {uq}")
+
+        # 回答重複檢查
         replies = [q.reply for q in qs.questions]
         dupes = set(r for r in replies if replies.count(r) > 1)
         if dupes:
@@ -105,17 +131,6 @@ class PhantomInkGenerator:
             print("⚠️  回答包含謎底文字（可能太簡單）：")
             for lr in leak_replies:
                 print(f"     ✗ {lr}")
-
-        # 題庫檢查 + 標記自創題
-        for q in qs.questions:
-            if q.question not in QUESTION_BANK:
-                q.is_custom = True
-
-        unknown = [q.question for q in qs.questions if q.is_custom]
-        if unknown:
-            print("⚠️  以下題目不在題庫中（已標記為自創題）：")
-            for uq in unknown:
-                print(f"     ✗ {uq}")
 
         # human 模式：清空回答
         if answer_mode == "human":
@@ -265,6 +280,67 @@ class PhantomInkGenerator:
         )
         return reply.strip()
 
+    # ── 局部修正 ──────────────────────────
+
+    def _fix_questions(
+        self,
+        answer: str,
+        qs: QuestionSet,
+        bad_indices: list[int],
+    ) -> QuestionSet:
+        """重新產生指定的題號（只換有問題的幾題）"""
+        bad_desc = "\n".join(
+            f"第 {i+1} 題：{qs.questions[i].question} → {qs.questions[i].reply}"
+            for i in bad_indices
+        )
+        good = [
+            qs.questions[i]
+            for i in range(len(qs.questions))
+            if i not in bad_indices
+        ]
+        good_desc = "\n".join(
+            f"第 {i+1} 題：{qs.questions[i].question} → {qs.questions[i].reply}"
+            for i in range(len(qs.questions))
+            if i not in bad_indices
+        )
+
+        prompt = (
+            f'謎底是「{answer}」，已經有 {len(good)} 題合格的題目：\n'
+            f"{good_desc}\n\n"
+            f"以下 {len(bad_indices)} 題需要重做：\n"
+            f"{bad_desc}\n\n"
+            f"請重新產生這 {len(bad_indices)} 題（問題從題庫選，回答根據謎底填入），"
+            f"輸出 JSON 格式：\n"
+            f'{{"questions": [\n'
+            f'  {{"question": "...", "reply": "..."}},\n'
+            f"  ...\n"
+            f"]}}"
+        )
+
+        raw = self._json_chat(
+            [{"role": "user", "content": prompt}],
+            temperature=0.7,
+        )
+
+        new_questions = [
+            QuestionItem(question=q["question"], reply=q["reply"])
+            for q in raw["questions"]
+        ]
+
+        # 合併：保留舊的好題 + 新的替換題
+        merged = []
+        replace_idx = 0
+        for i in range(len(qs.questions)):
+            if i in bad_indices:
+                merged.append(new_questions[replace_idx])
+                replace_idx += 1
+            else:
+                merged.append(qs.questions[i])
+
+        qs.questions = merged
+        self._post_process(qs)
+        return qs
+
     # ── 完整 Pipeline ──────────────────────
 
     def generate(
@@ -311,6 +387,41 @@ class PhantomInkGenerator:
                     print(f"❌ 出題失敗：{e}")
                 continue
 
+            # 驗證 + 局部修正
+            for fix_attempt in range(3):
+                self._post_process(question_set)
+
+                # 找有問題的題號
+                bad = set()
+                replies = [q.reply for q in question_set.questions]
+                # 重複回答
+                for i, r in enumerate(replies):
+                    if replies.count(r) > 1:
+                        bad.add(i)
+                # 洩題
+                for i, q in enumerate(question_set.questions):
+                    if any(c in q.reply for c in question_set.answer):
+                        bad.add(i)
+
+                if not bad:
+                    break  # 全部 OK
+
+                if verbose:
+                    print(f"⚠️  發現 {len(bad)} 題有問題，重新產生...")
+                    for i in sorted(bad):
+                        reason = []
+                        r = question_set.questions[i].reply
+                        if replies.count(r) > 1:
+                            reason.append("回答重複")
+                        if any(c in r for c in question_set.answer):
+                            reason.append("洩漏謎底")
+                        print(f"     第 {i+1} 題：{'、'.join(reason)}")
+
+                question_set = self._fix_questions(
+                    answer, question_set, sorted(bad)
+                )
+
+            # 顯示結果
             if verbose:
                 for i, q in enumerate(question_set.questions):
                     tag = " [自創]" if q.is_custom else ""
