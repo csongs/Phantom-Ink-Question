@@ -5,14 +5,14 @@ AI 驅動的題目生成器。
 1. 出題（Designer）— 產生七道由難到易的問答
 2. 驗題（Reviewer）— 檢查題目品質
 3. 模擬（Simulator）— AI 扮演玩家逐題猜測
+
+支援後端：OpenAI API、Hugging Face 本地模型
 """
 
 import json
-import time
-from typing import Optional
+from typing import Optional, Union
 
-from openai import OpenAI
-
+from backends import LLMBackend, create_backend
 from models import (
     QuestionItem,
     QuestionSet,
@@ -34,18 +34,52 @@ from bopomofo import to_bopomofo_cells, count_bopomofo_cells
 
 
 class PhantomInkGenerator:
-    """Phantom Ink 題目生成器"""
+    """Phantom Ink 題目生成器
+
+    支援多種 LLM 後端：
+
+    # OpenAI
+    gen = PhantomInkGenerator(backend="openai", api_key="sk-...", model="gpt-4o")
+
+    # Hugging Face 本地模型（Colab T4 可用）
+    gen = PhantomInkGenerator(backend="huggingface", hf_model="Qwen/Qwen2.5-7B-Instruct")
+    """
 
     def __init__(
         self,
-        api_key: str,
+        backend: Union[str, LLMBackend] = "openai",
+        api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         model: str = "gpt-4o",
+        hf_model: str = "Qwen/Qwen2.5-7B-Instruct",
         max_retries: int = 3,
     ):
-        self.client = OpenAI(api_key=api_key, base_url=base_url)
-        self.model = model
+        if isinstance(backend, LLMBackend):
+            self.llm = backend
+        else:
+            self.llm = create_backend(
+                backend_type=backend,
+                api_key=api_key,
+                base_url=base_url,
+                model=model,
+                hf_model=hf_model,
+            )
         self.max_retries = max_retries
+
+    def _json_chat(
+        self,
+        messages: list[dict],
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+    ) -> dict:
+        """發送對話並解析 JSON 回覆"""
+        reply = self.llm.chat(
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            response_format={"type": "json_object"} if self.llm.supports_json_mode() else None,
+        )
+        return json.loads(reply)
 
     # ── Phase 1: 出題 ──────────────────────
 
@@ -56,14 +90,7 @@ class PhantomInkGenerator:
             {"role": "user", "content": DESIGNER_USER_PROMPT.format(answer=answer)},
         ]
 
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            response_format={"type": "json_object"},
-            temperature=0.7,
-        )
-
-        raw = json.loads(response.choices[0].message.content)
+        raw = self._json_chat(messages, temperature=0.7)
 
         questions = [
             QuestionItem(question=q["question"], reply=q["reply"])
@@ -92,14 +119,7 @@ class PhantomInkGenerator:
             },
         ]
 
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            response_format={"type": "json_object"},
-            temperature=0.3,
-        )
-
-        raw = json.loads(response.choices[0].message.content)
+        raw = self._json_chat(messages, temperature=0.3, max_tokens=1024)
 
         return ReviewResult(
             score=raw.get("score", 0),
@@ -112,7 +132,6 @@ class PhantomInkGenerator:
     def simulate_player(self, question_set: QuestionSet) -> SimulationResult:
         """階段三：模擬玩家 — AI 扮演玩家逐題猜測"""
         rounds = []
-        revealed_bpmf = ""  # 累計已揭露的完整回答注音
 
         # 決定類別提示
         category_hint = self._infer_category(question_set.answer)
@@ -121,15 +140,13 @@ class PhantomInkGenerator:
             round_num = i + 1
             total_cells = count_bopomofo_cells(q_item.reply)
 
-            # 逐格揭露（每題逐步揭露）
             cells = to_bopomofo_cells(q_item.reply)
             revealed_count = 0
             guessed = False
+            last_raw = {}
 
             for reveal_step in range(1, total_cells + 1):
                 revealed_count = reveal_step
-                revealed = "".join(cells[:revealed_count])
-                hidden_count = total_cells - revealed_count
 
                 # 建立歷史記錄
                 history_lines = []
@@ -160,14 +177,8 @@ class PhantomInkGenerator:
                     {"role": "user", "content": prompt},
                 ]
 
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    response_format={"type": "json_object"},
-                    temperature=0.5,
-                )
-
-                raw = json.loads(response.choices[0].message.content)
+                raw = self._json_chat(messages, temperature=0.5)
+                last_raw = raw
                 want_to_guess = raw.get("want_to_guess", False)
                 guess = raw.get("current_best_guess", "")
 
@@ -182,7 +193,6 @@ class PhantomInkGenerator:
                     break
 
             # 記錄這回合
-            full_revealed = "".join(cells)
             revealed_display_final = " ".join(
                 cells[:revealed_count] + ["▢"] * (total_cells - revealed_count)
             )
@@ -192,7 +202,7 @@ class PhantomInkGenerator:
                 question=q_item.question,
                 reply=q_item.reply,
                 ink_revealed=revealed_display_final,
-                player_guess=raw.get("current_best_guess", ""),
+                player_guess=last_raw.get("current_best_guess", ""),
                 guessed_correctly=guessed,
             )
             rounds.append(simulation_round)
@@ -334,18 +344,15 @@ class PhantomInkGenerator:
 
     def _infer_category(self, answer: str) -> str:
         """根據答案推測類別提示"""
-        # 用 AI 推測類別
         prompt = f"""請判斷"{answer}"最適合以下哪個類別，只輸出類別名稱：
 {"、".join(CATEGORY_HINTS.keys())}"""
 
-        response = self.client.chat.completions.create(
-            model=self.model,
+        reply = self.llm.chat(
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
             max_tokens=20,
         )
-
-        category = response.choices[0].message.content.strip()
+        category = reply.strip()
         return CATEGORY_HINTS.get(category, f"這與「{answer}」相關")
 
     def _build_simulation_reason(
@@ -401,23 +408,32 @@ class PhantomInkGenerator:
 if __name__ == "__main__":
     import os
 
-    api_key = os.getenv("OPENAI_API_KEY") or os.getenv("GEMINI_API_KEY")
-    base_url = os.getenv("OPENAI_BASE_URL")
+    # 可透過環境變數切換後端
+    BACKEND = os.getenv("LLM_BACKEND", "openai")
 
-    if not api_key:
-        print("請設定 OPENAI_API_KEY 或 GEMINI_API_KEY 環境變數")
-        exit(1)
+    if BACKEND == "huggingface":
+        gen = PhantomInkGenerator(
+            backend="huggingface",
+            hf_model=os.getenv("HF_MODEL", "Qwen/Qwen2.5-7B-Instruct"),
+        )
+    else:
+        api_key = os.getenv("OPENAI_API_KEY") or os.getenv("GEMINI_API_KEY")
+        base_url = os.getenv("OPENAI_BASE_URL")
 
-    gen = PhantomInkGenerator(
-        api_key=api_key,
-        base_url=base_url,
-        model=os.getenv("LLM_MODEL", "gpt-4o"),
-    )
+        if not api_key:
+            print("請設定 OPENAI_API_KEY 或 GEMINI_API_KEY 環境變數")
+            exit(1)
+
+        gen = PhantomInkGenerator(
+            backend="openai",
+            api_key=api_key,
+            base_url=base_url,
+            model=os.getenv("LLM_MODEL", "gpt-4o"),
+        )
 
     # 測試：產生一個題組
     result = gen.generate("鋼琴", verbose=True)
 
     if result.questions and result.questions[0].reply != "（生成失敗）":
-        # 輸出 JSON
         print("\n\n📦 最終 JSON：")
         print(result.model_dump_json(indent=2, exclude_none=True))

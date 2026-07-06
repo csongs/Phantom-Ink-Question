@@ -1,1 +1,2 @@
 - [User Design Intent](memory/user_design_intent.md) — Phantom Ink 問答生成系統的完整設計架構與三階段流程
+- [No Automatic Git Push](memory/feedback_git_push.md) — 不要自動 push，由使用者決定推送時機
