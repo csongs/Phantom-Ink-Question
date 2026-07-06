@@ -215,7 +215,7 @@ class PhantomInkGenerator:
         self,
         answer: str,
         skip_review: bool = False,
-        skip_simulation: bool = False,
+        skip_simulation: bool = True,
         verbose: bool = True,
     ) -> QuestionSetWithMeta:
         """完整流程：出題 → 驗題 → 模擬（自動重試不合格題目）"""
@@ -357,7 +357,7 @@ class PhantomInkGenerator:
         self,
         answers: list[str],
         skip_review: bool = False,
-        skip_simulation: bool = False,
+        skip_simulation: bool = True,
         verbose: bool = True,
     ) -> list[QuestionSetWithMeta]:
         """批次生成多個題組"""
