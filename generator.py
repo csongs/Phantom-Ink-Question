@@ -28,6 +28,7 @@ from prompts import (
     SIMULATOR_USER_PROMPT,
     CATEGORY_HINTS,
     QUESTION_BANK,
+    ANSWER_GENERATOR_PROMPT,
     format_designer_prompt,
 )
 from bopomofo import to_bopomofo_cells, count_bopomofo_cells
@@ -253,21 +254,44 @@ class PhantomInkGenerator:
             rounds=rounds,
         )
 
+    # ── AI 自產謎底 ──────────────────────
+
+    def generate_answer(self) -> str:
+        """讓 AI 自己產生一個適合的謎底"""
+        reply = self.llm.chat(
+            messages=[{"role": "user", "content": ANSWER_GENERATOR_PROMPT}],
+            temperature=0.9,
+            max_tokens=20,
+        )
+        return reply.strip()
+
     # ── 完整 Pipeline ──────────────────────
 
     def generate(
         self,
-        answer: str,
+        answer: str = "",
         skip_review: bool = False,
         skip_simulation: bool = True,
         verbose: bool = True,
         answer_mode: str = "ai",
         num_questions: int = 7,
+        ai_generate_answer: bool = False,
     ) -> QuestionSetWithMeta:
         """完整流程：出題 → 驗題 → 模擬（自動重試不合格題目）
 
+        ai_generate_answer: True = 讓 AI 自己產生謎底
         num_questions: 要出幾題（預設 7）
         """
+        # AI 自產謎底
+        if ai_generate_answer:
+            if verbose:
+                print("🎲 AI 思考謎底中...")
+            answer = self.generate_answer()
+            if verbose:
+                print(f"🎲 AI 產生的謎底：{answer}\n")
+        elif not answer:
+            raise ValueError("請提供謎底，或啟用 ai_generate_answer")
+
         retry_count = 0
         last_error = None
 
