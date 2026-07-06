@@ -10,6 +10,7 @@ AI 驅動的題目生成器。
 """
 
 import json
+import random
 from typing import Optional
 
 from zhconv import convert
@@ -31,6 +32,7 @@ from prompts import (
     CATEGORY_HINTS,
     QUESTION_BANK,
     ANSWER_GENERATOR_PROMPT,
+    ANSWER_SEEDS,
     format_designer_prompt,
 )
 from bopomofo import to_bopomofo_cells, count_bopomofo_cells
@@ -279,10 +281,20 @@ class PhantomInkGenerator:
 
     # ── AI 自產謎底 ──────────────────────
 
-    def generate_answer(self) -> str:
-        """讓 AI 自己產生一個適合的謎底"""
+    def generate_answer(self, used_answers: list[str] | None = None) -> str:
+        """讓 AI 自己產生一個適合的謎底（附種子方向 + 排除清單）"""
+        used_hint = (
+            f"以下謎底已經出過了，請不要重複：{'、'.join(used_answers)}"
+            if used_answers else "不要與之前出過的謎底重複"
+        )
+        seed = random.choice(ANSWER_SEEDS)
+
+        prompt = ANSWER_GENERATOR_PROMPT.format(
+            seed=seed,
+            used_hint=used_hint,
+        )
         reply = self.llm.chat(
-            messages=[{"role": "user", "content": ANSWER_GENERATOR_PROMPT}],
+            messages=[{"role": "user", "content": prompt}],
             temperature=0.9,
             max_tokens=20,
         )
@@ -368,11 +380,27 @@ class PhantomInkGenerator:
         """
         # AI 自產謎底
         if answer_mode == "ai":
+            # 從歷史檔讀取已出過的謎底，避免重複
+            used = []
+            history_file = "generated_answers.txt"
+            try:
+                with open(history_file, encoding="utf-8") as f:
+                    used = [line.strip() for line in f if line.strip()]
+            except FileNotFoundError:
+                pass
+
             if verbose:
                 print("🎲 AI 思考謎底中...")
-            answer = self.generate_answer()
+            answer = self.generate_answer(used_answers=used)
             if verbose:
                 print(f"🎲 AI 產生的謎底：{answer}\n")
+
+            # 寫入歷史
+            try:
+                with open(history_file, "a", encoding="utf-8") as f:
+                    f.write(answer + "\n")
+            except Exception:
+                pass
         elif not answer:
             raise ValueError("answer_mode 為 human 時必須提供謎底")
 
