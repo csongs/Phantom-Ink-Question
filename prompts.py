@@ -1,4 +1,4 @@
-"""Prompt 模板 — 出題、驗題、模擬玩家"""
+import random
 
 # ──────────────────────────────────────────
 # Prompt 1：出題（Question Designer）
@@ -316,7 +316,9 @@ def format_designer_prompt(answer: str, num_questions: int = 7) -> tuple:
     """
     hard_count = max(1, (num_questions * 2) // 5)      # ~40%
     easy_count = max(2, num_questions - hard_count - 1)  # 最後幾題接近生活
-    bank_text = "\n".join(f"- {q}" for q in QUESTION_BANK)
+    # 從題庫隨機抽 30 題給 AI 參考，避免 prompt 過長
+    sample = random.sample(QUESTION_BANK, min(30, len(QUESTION_BANK)))
+    bank_text = "\n".join(f"- {q}" for q in sample)
     system = DESIGNER_SYSTEM_PROMPT.format(
         num_questions=num_questions,
         hard_count=hard_count,
