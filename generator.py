@@ -307,12 +307,16 @@ class PhantomInkGenerator:
         answer: str,
         qs: QuestionSet,
         bad_indices: list[int],
+        reasons: dict[int, list[str]] | None = None,
     ) -> QuestionSet:
         """重新產生指定的題號（只換有問題的幾題）"""
-        bad_desc = "\n".join(
-            f"第 {i+1} 題：{qs.questions[i].question} → {qs.questions[i].reply}"
-            for i in bad_indices
-        )
+        bad_desc_lines = []
+        for i in bad_indices:
+            line = f"第 {i+1} 題：{qs.questions[i].question} → {qs.questions[i].reply}"
+            if reasons and i in reasons:
+                line += f"  # 原因：{'、'.join(reasons[i])}"
+            bad_desc_lines.append(line)
+        bad_desc = "\n".join(bad_desc_lines)
         good = [
             qs.questions[i]
             for i in range(len(qs.questions))
@@ -448,19 +452,21 @@ class PhantomInkGenerator:
 
                 if verbose:
                     print(f"⚠️  發現 {len(bad)} 題有問題，重新產生...")
-                    for i in sorted(bad):
-                        reason = []
-                        r = question_set.questions[i].reply
-                        if not r.strip():
-                            reason.append("空回答")
-                        if replies.count(r) > 1:
-                            reason.append("回答重複")
-                        if any(c in r for c in question_set.answer):
-                            reason.append("洩漏謎底")
-                        print(f"     第 {i+1} 題：{'、'.join(reason)}")
+                reasons_dict = {}
+                for i in sorted(bad):
+                    r = question_set.questions[i].reply
+                    reasons_dict[i] = []
+                    if not r.strip():
+                        reasons_dict[i].append("空回答")
+                    if r.strip() and replies.count(r) > 1:
+                        reasons_dict[i].append("回答重複")
+                    if any(c in r for c in question_set.answer):
+                        reasons_dict[i].append("洩漏謎底文字")
+                    if verbose:
+                        print(f"     第 {i+1} 題：{'、'.join(reasons_dict[i])}")
 
                 question_set = self._fix_questions(
-                    answer, question_set, sorted(bad)
+                    answer, question_set, sorted(bad), reasons=reasons_dict
                 )
 
             # 顯示結果
