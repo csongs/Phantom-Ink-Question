@@ -336,7 +336,7 @@ QUESTION_BANK = [
 ]
 
 
-def format_designer_prompt(answer: str, num_questions: int = 10) -> tuple:
+def format_designer_prompt(answer: str, num_questions: int = 7) -> tuple:
     """組合出題 prompt（含題庫）
 
     num_questions: 要產生的題數（預設 7）
