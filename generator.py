@@ -291,12 +291,6 @@ class PhantomInkGenerator:
                 print(f"🎲 AI 產生的謎底：{answer}\n")
         elif not answer:
             raise ValueError("answer_mode 為 human 時必須提供謎底")
-                print("🎲 AI 思考謎底中...")
-            answer = self.generate_answer()
-            if verbose:
-                print(f"🎲 AI 產生的謎底：{answer}\n")
-        elif not answer:
-            raise ValueError("請提供謎底，或啟用 ai_generate_answer")
 
         retry_count = 0
         last_error = None
