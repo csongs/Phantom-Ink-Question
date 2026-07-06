@@ -308,7 +308,7 @@ class PhantomInkGenerator:
         reply = self.llm.chat(
             messages=[{"role": "user", "content": prompt}],
             temperature=0.9,
-            max_tokens=50,
+            max_tokens=20,
         )
         return reply.strip()
 
@@ -566,7 +566,7 @@ class PhantomInkGenerator:
         reply = self.llm.chat(
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
-            max_tokens=50,
+            max_tokens=20,
         )
         category = reply.strip()
         return CATEGORY_HINTS.get(category, f"這與「{answer}」相關")

@@ -116,21 +116,6 @@ class GroqBackend(LLMBackend):
         self._model = model
         print(f"✅ Groq API 已連接：{model}")
 
-    @staticmethod
-    def _strip_reasoning(content: str) -> str:
-        """移除 Qwen 等推理模型的 thinking 內容。"""
-        # 標準格式：<thought>...</thought>\n\n 答案
-        cleaned = re.sub(r'<thought>[\s\S]*?</thought>\s*', '', content)
-        # 格式：thinking\n...推理...\n<answer>
-        if cleaned.startswith("thinking\n"):
-            cleaned = re.sub(r'^thinking\s*\n[\s\S]*?\n\s*', '', cleaned)
-        # 如果還包含多段文字（推理內容混在 content 中），取最後一段
-        if "\n\n" in cleaned:
-            paragraphs = [p.strip() for p in cleaned.split("\n\n") if p.strip()]
-            if paragraphs:
-                cleaned = paragraphs[-1]
-        return cleaned.strip()
-
     def chat(
         self,
         messages: list[dict],
@@ -149,14 +134,7 @@ class GroqBackend(LLMBackend):
             kwargs["response_format"] = response_format
 
         response = self._client.chat.completions.create(**kwargs)
-        msg = response.choices[0].message
-        reply = msg.content
-
-        # 若有獨立的 reasoning_content 欄位，content 已是純答案
-        if hasattr(msg, "reasoning_content") and msg.reasoning_content:
-            pass  # content 已經是純答案
-        else:
-            reply = self._strip_reasoning(reply)
+        reply = response.choices[0].message.content
 
         if response_format and response_format.get("type") == "json_object":
             reply = self._extract_json(reply)
