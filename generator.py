@@ -1,0 +1,423 @@
+"""
+AI 驅動的題目生成器。
+
+三階段流程：
+1. 出題（Designer）— 產生七道由難到易的問答
+2. 驗題（Reviewer）— 檢查題目品質
+3. 模擬（Simulator）— AI 扮演玩家逐題猜測
+"""
+
+import json
+import time
+from typing import Optional
+
+from openai import OpenAI
+
+from models import (
+    QuestionItem,
+    QuestionSet,
+    QuestionSetWithMeta,
+    ReviewResult,
+    SimulationResult,
+    SimulationRound,
+)
+from prompts import (
+    DESIGNER_SYSTEM_PROMPT,
+    DESIGNER_USER_PROMPT,
+    REVIEWER_SYSTEM_PROMPT,
+    REVIEWER_USER_PROMPT,
+    SIMULATOR_SYSTEM_PROMPT,
+    SIMULATOR_USER_PROMPT,
+    CATEGORY_HINTS,
+)
+from bopomofo import to_bopomofo_cells, count_bopomofo_cells
+
+
+class PhantomInkGenerator:
+    """Phantom Ink 題目生成器"""
+
+    def __init__(
+        self,
+        api_key: str,
+        base_url: Optional[str] = None,
+        model: str = "gpt-4o",
+        max_retries: int = 3,
+    ):
+        self.client = OpenAI(api_key=api_key, base_url=base_url)
+        self.model = model
+        self.max_retries = max_retries
+
+    # ── Phase 1: 出題 ──────────────────────
+
+    def design_questions(self, answer: str) -> QuestionSet:
+        """階段一：出題 — AI 扮演出題老師產生七道問答"""
+        messages = [
+            {"role": "system", "content": DESIGNER_SYSTEM_PROMPT},
+            {"role": "user", "content": DESIGNER_USER_PROMPT.format(answer=answer)},
+        ]
+
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            response_format={"type": "json_object"},
+            temperature=0.7,
+        )
+
+        raw = json.loads(response.choices[0].message.content)
+
+        questions = [
+            QuestionItem(question=q["question"], reply=q["reply"])
+            for q in raw["questions"]
+        ]
+
+        return QuestionSet(answer=raw["answer"], questions=questions)
+
+    # ── Phase 2: 驗題 ──────────────────────
+
+    def review_questions(self, question_set: QuestionSet) -> ReviewResult:
+        """階段二：驗題 — AI 扮演驗題老師檢查品質"""
+        questions_text = "\n".join(
+            f"Q{i+1}. {q.question}\nA{i+1}. {q.reply}"
+            for i, q in enumerate(question_set.questions)
+        )
+
+        messages = [
+            {"role": "system", "content": REVIEWER_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": REVIEWER_USER_PROMPT.format(
+                    answer=question_set.answer,
+                    questions_text=questions_text,
+                ),
+            },
+        ]
+
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            response_format={"type": "json_object"},
+            temperature=0.3,
+        )
+
+        raw = json.loads(response.choices[0].message.content)
+
+        return ReviewResult(
+            score=raw.get("score", 0),
+            passed=raw.get("passed", False),
+            comments=raw.get("comments", []),
+        )
+
+    # ── Phase 3: 模擬玩家 ──────────────────
+
+    def simulate_player(self, question_set: QuestionSet) -> SimulationResult:
+        """階段三：模擬玩家 — AI 扮演玩家逐題猜測"""
+        rounds = []
+        revealed_bpmf = ""  # 累計已揭露的完整回答注音
+
+        # 決定類別提示
+        category_hint = self._infer_category(question_set.answer)
+
+        for i, q_item in enumerate(question_set.questions):
+            round_num = i + 1
+            total_cells = count_bopomofo_cells(q_item.reply)
+
+            # 逐格揭露（每題逐步揭露）
+            cells = to_bopomofo_cells(q_item.reply)
+            revealed_count = 0
+            guessed = False
+
+            for reveal_step in range(1, total_cells + 1):
+                revealed_count = reveal_step
+                revealed = "".join(cells[:revealed_count])
+                hidden_count = total_cells - revealed_count
+
+                # 建立歷史記錄
+                history_lines = []
+                for j, r in enumerate(rounds):
+                    history_lines.append(
+                        f"Q{j+1}: {r.question}\n"
+                        f"回答注音: {r.ink_revealed}\n"
+                        f"你的猜測: {r.player_guess or '（尚未猜測）'}"
+                    )
+
+                history = "\n\n".join(history_lines) if history_lines else "（尚無歷史）"
+
+                revealed_display = " ".join(
+                    cells[:revealed_count] + ["▢"] * (total_cells - revealed_count)
+                )
+
+                prompt = SIMULATOR_USER_PROMPT.format(
+                    category_hint=category_hint,
+                    round_number=round_num,
+                    history=history,
+                    question=q_item.question,
+                    revealed_bpmf=revealed_display,
+                    total_cells=total_cells,
+                )
+
+                messages = [
+                    {"role": "system", "content": SIMULATOR_SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ]
+
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    response_format={"type": "json_object"},
+                    temperature=0.5,
+                )
+
+                raw = json.loads(response.choices[0].message.content)
+                want_to_guess = raw.get("want_to_guess", False)
+                guess = raw.get("current_best_guess", "")
+
+                # 檢查是否猜對
+                if want_to_guess and guess.strip() == question_set.answer:
+                    guessed = True
+                    break
+
+                # 如果玩家想猜但猜錯，遊戲結束
+                if want_to_guess and guess.strip() != question_set.answer:
+                    guessed = False
+                    break
+
+            # 記錄這回合
+            full_revealed = "".join(cells)
+            revealed_display_final = " ".join(
+                cells[:revealed_count] + ["▢"] * (total_cells - revealed_count)
+            )
+
+            simulation_round = SimulationRound(
+                round_number=round_num,
+                question=q_item.question,
+                reply=q_item.reply,
+                ink_revealed=revealed_display_final,
+                player_guess=raw.get("current_best_guess", ""),
+                guessed_correctly=guessed,
+            )
+            rounds.append(simulation_round)
+
+            if guessed:
+                break
+
+        # 計算結果
+        guess_round = next(
+            (r.round_number for r in reversed(rounds) if r.guessed_correctly),
+            len(rounds) + 1,
+        )
+        ink_used = sum(
+            len([c for c in r.ink_revealed if c != "▢" and c != " "])
+            for r in rounds
+        )
+        too_easy = guess_round <= 2
+        too_hard = guess_round > len(question_set.questions)
+        confidence = max(0.0, min(1.0, 1.0 - (guess_round - 1) / 7))
+
+        return SimulationResult(
+            guess_round=guess_round,
+            ink_used=ink_used,
+            confidence=round(confidence, 2),
+            too_easy=too_easy,
+            too_hard=too_hard,
+            reason=self._build_simulation_reason(rounds, guess_round, too_easy, too_hard),
+            rounds=rounds,
+        )
+
+    # ── 完整 Pipeline ──────────────────────
+
+    def generate(
+        self,
+        answer: str,
+        skip_review: bool = False,
+        skip_simulation: bool = False,
+        verbose: bool = True,
+    ) -> QuestionSetWithMeta:
+        """完整流程：出題 → 驗題 → 模擬（自動重試不合格題目）"""
+        retry_count = 0
+        last_error = None
+
+        for attempt in range(self.max_retries):
+            if verbose:
+                print(f"\n{'='*50}")
+                print(f"📝 第 {attempt + 1} 次生成 — 謎底：{answer}")
+                print(f"{'='*50}")
+
+            # 出題
+            if verbose:
+                print("\n🤖 出題中...")
+            try:
+                question_set = self.design_questions(answer)
+            except Exception as e:
+                last_error = str(e)
+                if verbose:
+                    print(f"❌ 出題失敗：{e}")
+                continue
+
+            if verbose:
+                for i, q in enumerate(question_set.questions):
+                    print(f"  Q{i+1}. {q.question}")
+                    print(f"  A{i+1}. {q.reply}")
+                    print()
+
+            # 驗題
+            if not skip_review:
+                if verbose:
+                    print("🔍 驗題中...")
+                try:
+                    review = self.review_questions(question_set)
+                except Exception as e:
+                    last_error = str(e)
+                    if verbose:
+                        print(f"❌ 驗題失敗：{e}")
+                    continue
+
+                if verbose:
+                    print(f"  評分：{review.score}/100")
+                    for c in review.comments:
+                        print(f"  • {c}")
+
+                if not review.passed:
+                    retry_count += 1
+                    if verbose:
+                        print(f"\n🔄 未通過（{review.score}分），重新生成...")
+                    continue
+            else:
+                review = None
+
+            # 模擬
+            simulation = None
+            if not skip_simulation:
+                if verbose:
+                    print("🎮 模擬玩家中...")
+                try:
+                    simulation = self.simulate_player(question_set)
+                except Exception as e:
+                    if verbose:
+                        print(f"⚠️  模擬失敗：{e}（跳過）")
+
+                if simulation:
+                    if verbose:
+                        print(f"  在第 {simulation.guess_round} 題猜出")
+                        print(f"  使用 {simulation.ink_used} 格注音")
+                        print(f"  信心指數：{simulation.confidence}")
+                        print(f"  太簡單：{simulation.too_easy}")
+                        print(f"  太困難：{simulation.too_hard}")
+                        print(f"  原因：{simulation.reason}")
+
+            # 成功！
+            if verbose:
+                print(f"\n✅ 題組生成成功！（嘗試 {attempt + 1} 次）")
+
+            return QuestionSetWithMeta(
+                answer=question_set.answer,
+                questions=question_set.questions,
+                review=review,
+                simulation=simulation,
+                retry_count=retry_count,
+            )
+
+        # 所有重試都失敗
+        if verbose:
+            print(f"\n❌ 超過最大重試次數（{self.max_retries}），生成失敗。")
+            if last_error:
+                print(f"   最後錯誤：{last_error}")
+
+        return QuestionSetWithMeta(
+            answer=answer,
+            questions=[
+                QuestionItem(question="（生成失敗）", reply="（生成失敗）"),
+            ],
+            retry_count=retry_count,
+        )
+
+    # ── 輔助方法 ──────────────────────────
+
+    def _infer_category(self, answer: str) -> str:
+        """根據答案推測類別提示"""
+        # 用 AI 推測類別
+        prompt = f"""請判斷"{answer}"最適合以下哪個類別，只輸出類別名稱：
+{"、".join(CATEGORY_HINTS.keys())}"""
+
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            max_tokens=20,
+        )
+
+        category = response.choices[0].message.content.strip()
+        return CATEGORY_HINTS.get(category, f"這與「{answer}」相關")
+
+    def _build_simulation_reason(
+        self,
+        rounds: list[SimulationRound],
+        guess_round: int,
+        too_easy: bool,
+        too_hard: bool,
+    ) -> str:
+        """建構模擬結果的原因說明"""
+        total = len(rounds)
+        if too_easy:
+            return (
+                f"玩家在第 {guess_round} 題就猜出，表示題目太過簡單。"
+                f"建議增加前面題目的難度。"
+            )
+        elif too_hard:
+            return (
+                f"玩家看完所有 {total} 題仍未猜出，表示題目太難。"
+                f"建議增加更多提示性問題。"
+            )
+        else:
+            return (
+                f"玩家在第 {guess_round} 題猜出，難度適中。"
+                f"共使用 {sum(len(r.ink_revealed.split()) for r in rounds if r.guessed_correctly)} "
+                f"格注音，節奏良好。"
+            )
+
+    # ── 批次生成 ──────────────────────────
+
+    def generate_batch(
+        self,
+        answers: list[str],
+        skip_review: bool = False,
+        skip_simulation: bool = False,
+        verbose: bool = True,
+    ) -> list[QuestionSetWithMeta]:
+        """批次生成多個題組"""
+        results = []
+        for answer in answers:
+            result = self.generate(
+                answer=answer,
+                skip_review=skip_review,
+                skip_simulation=skip_simulation,
+                verbose=verbose,
+            )
+            results.append(result)
+        return results
+
+
+# ── 主程式 ────────────────────────────────
+
+if __name__ == "__main__":
+    import os
+
+    api_key = os.getenv("OPENAI_API_KEY") or os.getenv("GEMINI_API_KEY")
+    base_url = os.getenv("OPENAI_BASE_URL")
+
+    if not api_key:
+        print("請設定 OPENAI_API_KEY 或 GEMINI_API_KEY 環境變數")
+        exit(1)
+
+    gen = PhantomInkGenerator(
+        api_key=api_key,
+        base_url=base_url,
+        model=os.getenv("LLM_MODEL", "gpt-4o"),
+    )
+
+    # 測試：產生一個題組
+    result = gen.generate("鋼琴", verbose=True)
+
+    if result.questions and result.questions[0].reply != "（生成失敗）":
+        # 輸出 JSON
+        print("\n\n📦 最終 JSON：")
+        print(result.model_dump_json(indent=2, exclude_none=True))
