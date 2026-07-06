@@ -27,6 +27,7 @@ from prompts import (
     SIMULATOR_SYSTEM_PROMPT,
     SIMULATOR_USER_PROMPT,
     CATEGORY_HINTS,
+    QUESTION_BANK,
     format_designer_prompt,
 )
 from bopomofo import to_bopomofo_cells, count_bopomofo_cells
@@ -64,8 +65,11 @@ class PhantomInkGenerator:
 
     # ── Phase 1: 出題 ──────────────────────
 
-    def design_questions(self, answer: str) -> QuestionSet:
-        """階段一：出題 — AI 扮演出題老師產生七道問答"""
+    def design_questions(self, answer: str, answer_mode: str = "ai") -> QuestionSet:
+        """階段一：出題 — AI 扮演出題老師產生七道問答
+
+        answer_mode: "ai" = AI 填回答, "human" = 只選題目，回答留空
+        """
         system, user = format_designer_prompt(answer)
         messages = [
             {"role": "system", "content": system},
@@ -79,7 +83,46 @@ class PhantomInkGenerator:
             for q in raw["questions"]
         ]
 
-        return QuestionSet(answer=raw["answer"], questions=questions)
+        qs = QuestionSet(answer=raw["answer"], questions=questions)
+
+        # 回答重複檢查（七題之間）
+        replies = [q.reply for q in qs.questions]
+        dupes = set(r for r in replies if replies.count(r) > 1)
+        if dupes:
+            print(f"⚠️  發現重複回答：{', '.join(dupes)}")
+
+        # 回答洩題檢查（回答包含謎底的文字）
+        leak_replies = []
+        for q in qs.questions:
+            leaked_chars = [c for c in qs.answer if c in q.reply]
+            if leaked_chars:
+                leak_replies.append(
+                    f"「{q.reply}」洩漏了「{''.join(leaked_chars)}」"
+                )
+        if leak_replies:
+            print("⚠️  回答包含謎底文字（可能太簡單）：")
+            for lr in leak_replies:
+                print(f"     ✗ {lr}")
+
+        # 題庫檢查 + 標記自創題
+        for q in qs.questions:
+            if q.question not in QUESTION_BANK:
+                q.is_custom = True
+
+        unknown = [q.question for q in qs.questions if q.is_custom]
+        if unknown:
+            print("⚠️  以下題目不在題庫中（已標記為自創題）：")
+            for uq in unknown:
+                print(f"     ✗ {uq}")
+
+        # human 模式：清空回答
+        if answer_mode == "human":
+            qs.questions = [
+                QuestionItem(question=q.question, reply="")
+                for q in qs.questions
+            ]
+
+        return qs
 
     # ── Phase 2: 驗題 ──────────────────────
 
@@ -217,6 +260,7 @@ class PhantomInkGenerator:
         skip_review: bool = False,
         skip_simulation: bool = True,
         verbose: bool = True,
+        answer_mode: str = "ai",
     ) -> QuestionSetWithMeta:
         """完整流程：出題 → 驗題 → 模擬（自動重試不合格題目）"""
         retry_count = 0
@@ -231,7 +275,7 @@ class PhantomInkGenerator:
             if verbose:
                 print("\n🤖 出題中...")
             try:
-                question_set = self.design_questions(answer)
+                question_set = self.design_questions(answer, answer_mode=answer_mode)
             except Exception as e:
                 last_error = str(e)
                 if verbose:
@@ -240,7 +284,8 @@ class PhantomInkGenerator:
 
             if verbose:
                 for i, q in enumerate(question_set.questions):
-                    print(f"  Q{i+1}. {q.question}")
+                    tag = " [自創]" if q.is_custom else ""
+                    print(f"  Q{i+1}. {q.question}{tag}")
                     print(f"  A{i+1}. {q.reply}")
                     print()
 

@@ -6,6 +6,10 @@ class QuestionItem(BaseModel):
     """單題問答"""
     question: str = Field(description="問題")
     reply: str = Field(description="回答（不超過六個中文字）")
+    is_custom: bool = Field(
+        default=False,
+        description="是否為自創題（不在題庫中）",
+    )
 
 
 class QuestionSet(BaseModel):
