@@ -54,15 +54,15 @@ class PhantomInkGenerator:
         backend: str = "hf",
     ):
         if backend == "groq":
-            self.llm = GroqBackend(
-                api_key=token,
-                model=model or "qwen-2.5-coder-32b",
-            )
+            kw = {"api_key": token}
+            if model:
+                kw["model"] = model
+            self.llm = GroqBackend(**kw)
         else:
-            self.llm = HFInferenceBackend(
-                token=token,
-                model=model or "Qwen/Qwen2.5-7B-Instruct",
-            )
+            kw = {"token": token}
+            if model:
+                kw["model"] = model
+            self.llm = HFInferenceBackend(**kw)
         self.max_retries = max_retries
 
     def _json_chat(
