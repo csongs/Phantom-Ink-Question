@@ -6,7 +6,7 @@ AI 驅動的題目生成器。
 2. 驗題（Reviewer）— 檢查題目品質
 3. 模擬（Simulator）— AI 扮演玩家逐題猜測
 
-使用 Hugging Face Inference API（免下載模型，免費）。
+支援 HF Inference API 與 Groq API 兩種後端。
 """
 
 import json
@@ -15,7 +15,7 @@ from typing import Optional
 
 from zhconv import convert
 
-from backends import HFInferenceBackend
+from backends import HFInferenceBackend, GroqBackend
 from models import (
     QuestionItem,
     QuestionSet,
@@ -39,18 +39,30 @@ from bopomofo import to_bopomofo_cells, count_bopomofo_cells
 
 
 class PhantomInkGenerator:
-    """Phantom Ink 題目生成器（Hugging Face Inference API）
+    """Phantom Ink 題目生成器（支援 HF / Groq 後端）
 
-    需要 Hugging Face Token（免費申請：https://huggingface.co/settings/tokens）
+    需要 Token（免費申請）：
+    - Hugging Face：https://huggingface.co/settings/tokens
+    - Groq：https://console.groq.com/keys
     """
 
     def __init__(
         self,
-        token: str,
-        model: str = "Qwen/Qwen2.5-7B-Instruct",
+        token: str = "",
+        model: str = "",
         max_retries: int = 3,
+        backend: str = "hf",
     ):
-        self.llm = HFInferenceBackend(token=token, model=model)
+        if backend == "groq":
+            self.llm = GroqBackend(
+                api_key=token,
+                model=model or "qwen-2.5-coder-32b",
+            )
+        else:
+            self.llm = HFInferenceBackend(
+                token=token,
+                model=model or "Qwen/Qwen2.5-7B-Instruct",
+            )
         self.max_retries = max_retries
 
     def _json_chat(
