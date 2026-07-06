@@ -29,3 +29,6 @@ Thumbs.db
 _debug_out.txt
 _polyphone_check.txt
 check_polyphone.py
+
+# Subagent-driven-development scratch (progress ledger, review packages)
+.superpowers/
