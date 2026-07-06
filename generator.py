@@ -65,12 +65,13 @@ class PhantomInkGenerator:
 
     # ── Phase 1: 出題 ──────────────────────
 
-    def design_questions(self, answer: str, answer_mode: str = "ai") -> QuestionSet:
-        """階段一：出題 — AI 扮演出題老師產生七道問答
+    def design_questions(self, answer: str, answer_mode: str = "ai", num_questions: int = 7) -> QuestionSet:
+        """階段一：出題 — AI 扮演出題老師產生問答
 
         answer_mode: "ai" = AI 填回答, "human" = 只選題目，回答留空
+        num_questions: 要出幾題（預設 7）
         """
-        system, user = format_designer_prompt(answer)
+        system, user = format_designer_prompt(answer, num_questions=num_questions)
         messages = [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
@@ -261,8 +262,12 @@ class PhantomInkGenerator:
         skip_simulation: bool = True,
         verbose: bool = True,
         answer_mode: str = "ai",
+        num_questions: int = 7,
     ) -> QuestionSetWithMeta:
-        """完整流程：出題 → 驗題 → 模擬（自動重試不合格題目）"""
+        """完整流程：出題 → 驗題 → 模擬（自動重試不合格題目）
+
+        num_questions: 要出幾題（預設 7）
+        """
         retry_count = 0
         last_error = None
 
@@ -275,7 +280,7 @@ class PhantomInkGenerator:
             if verbose:
                 print("\n🤖 出題中...")
             try:
-                question_set = self.design_questions(answer, answer_mode=answer_mode)
+                question_set = self.design_questions(answer, answer_mode=answer_mode, num_questions=num_questions)
             except Exception as e:
                 last_error = str(e)
                 if verbose:
@@ -404,6 +409,8 @@ class PhantomInkGenerator:
         skip_review: bool = False,
         skip_simulation: bool = True,
         verbose: bool = True,
+        answer_mode: str = "ai",
+        num_questions: int = 7,
     ) -> list[QuestionSetWithMeta]:
         """批次生成多個題組"""
         results = []
@@ -413,6 +420,8 @@ class PhantomInkGenerator:
                 skip_review=skip_review,
                 skip_simulation=skip_simulation,
                 verbose=verbose,
+                answer_mode=answer_mode,
+                num_questions=num_questions,
             )
             results.append(result)
         return results
