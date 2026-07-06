@@ -1,8 +1,8 @@
 """
-LLM 後端抽象層 — Hugging Face 本地模型（Colab T4 可用）
+LLM 後端 — Hugging Face Inference API（免下載模型，免費）
 
 用法：
-    backend = HFBackend(model_name="Qwen/Qwen2.5-7B-Instruct")
+    backend = HFInferenceBackend(token="hf_...", model="Qwen/Qwen2.5-7B-Instruct")
     reply = backend.chat(messages, temperature=0.7)
 """
 
@@ -23,65 +23,31 @@ class LLMBackend(ABC):
         max_tokens: Optional[int] = None,
         response_format: Optional[dict] = None,
     ) -> str:
-        """發送對話訊息，回傳文字回覆"""
         ...
 
     @abstractmethod
     def model_name(self) -> str:
-        """回傳當前使用的模型名稱"""
         ...
 
-    def supports_json_mode(self) -> bool:
-        """是否支援原生 response_format='json_object' 模式"""
-        return False
 
+class HFInferenceBackend(LLMBackend):
+    """Hugging Face Inference API 後端（透過 huggingface_hub）
 
-class HFBackend(LLMBackend):
-    """Hugging Face Transformers 本地模型後端（4-bit 量化，適合 Colab T4）"""
+    優點：
+    - 不用下載模型（節省 15GB+ 空間）
+    - 不需要 GPU（一般 CPU 即可，Colab 免費額度足夠）
+    - Hugging Face 免費方案每天有 generous 的用量
+    """
 
     def __init__(
         self,
-        model_name: str = "Qwen/Qwen2.5-7B-Instruct",
-        device: str = "auto",
-        load_in_4bit: bool = True,
-        max_new_tokens: int = 2048,
+        token: str,
+        model: str = "Qwen/Qwen2.5-7B-Instruct",
     ):
-        import torch
-        from transformers import (
-            AutoModelForCausalLM,
-            AutoTokenizer,
-            BitsAndBytesConfig,
-            pipeline,
-        )
-
-        print(f"⏳ 正在載入模型 {model_name} ...")
-
-        quant_config = None
-        if load_in_4bit and torch.cuda.is_available():
-            quant_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_compute_dtype=torch.float16,
-                bnb_4bit_use_double_quant=True,
-            )
-
-        tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-        model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            quantization_config=quant_config,
-            device_map=device,
-            trust_remote_code=True,
-            torch_dtype=torch.float16 if torch.cuda.is_available() else "auto",
-        )
-
-        self._pipe = pipeline(
-            "text-generation",
-            model=model,
-            tokenizer=tokenizer,
-            max_new_tokens=max_new_tokens,
-        )
-        self._model_name = model_name
-        self._tokenizer = tokenizer
-        print(f"✅ 模型載入完成：{model_name}")
+        from huggingface_hub import InferenceClient
+        self._client = InferenceClient(token=token)
+        self._model = model
+        print(f"✅ HF Inference API 已連接：{model}")
 
     def chat(
         self,
@@ -90,38 +56,34 @@ class HFBackend(LLMBackend):
         max_tokens: Optional[int] = None,
         response_format: Optional[dict] = None,
     ) -> str:
-        prompt = self._tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-        )
-
-        gen_kwargs = dict(
+        kwargs = dict(
+            model=self._model,
+            messages=messages,
             temperature=temperature,
-            do_sample=True,
-            top_p=0.9,
         )
         if max_tokens:
-            gen_kwargs["max_new_tokens"] = max_tokens
+            kwargs["max_tokens"] = max_tokens
 
-        output = self._pipe(prompt, **gen_kwargs)[0]["generated_text"]
+        response = self._client.chat_completion(**kwargs)
+        reply = response.choices[0].message.content
 
-        reply = output[len(prompt):].strip()
-
+        # 如果是 JSON 格式要求，擷取 JSON 區塊
         if response_format and response_format.get("type") == "json_object":
             reply = self._extract_json(reply)
 
         return reply
 
     def model_name(self) -> str:
-        return self._model_name
+        return self._model
 
     def _extract_json(self, text: str) -> str:
         """從模型輸出中提取 JSON 區塊"""
+        # 嘗試找 ```json ... ```
         match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
         if match:
             return match.group(1).strip()
 
+        # 嘗試找 { ... }
         brace_start = text.find("{")
         if brace_start >= 0:
             depth = 0

@@ -6,13 +6,13 @@ AI 驅動的題目生成器。
 2. 驗題（Reviewer）— 檢查題目品質
 3. 模擬（Simulator）— AI 扮演玩家逐題猜測
 
-使用 Hugging Face 本地模型（預設 Qwen2.5-7B-Instruct）。
+使用 Hugging Face Inference API（免下載模型，免費）。
 """
 
 import json
 from typing import Optional
 
-from backends import HFBackend
+from backends import HFInferenceBackend
 from models import (
     QuestionItem,
     QuestionSet,
@@ -34,14 +34,18 @@ from bopomofo import to_bopomofo_cells, count_bopomofo_cells
 
 
 class PhantomInkGenerator:
-    """Phantom Ink 題目生成器（Hugging Face 本地模型）"""
+    """Phantom Ink 題目生成器（Hugging Face Inference API）
+
+    需要 Hugging Face Token（免費申請：https://huggingface.co/settings/tokens）
+    """
 
     def __init__(
         self,
-        model_name: str = "Qwen/Qwen2.5-7B-Instruct",
+        token: str,
+        model: str = "Qwen/Qwen2.5-7B-Instruct",
         max_retries: int = 3,
     ):
-        self.llm = HFBackend(model_name=model_name)
+        self.llm = HFInferenceBackend(token=token, model=model)
         self.max_retries = max_retries
 
     def _json_chat(
@@ -374,8 +378,15 @@ class PhantomInkGenerator:
 if __name__ == "__main__":
     import os
 
+    token = os.getenv("HF_TOKEN")
+    if not token:
+        print("請設定 HF_TOKEN 環境變數")
+        print("到 https://huggingface.co/settings/tokens 申請免費 Token")
+        exit(1)
+
     gen = PhantomInkGenerator(
-        model_name=os.getenv("HF_MODEL", "Qwen/Qwen2.5-7B-Instruct"),
+        token=token,
+        model=os.getenv("HF_MODEL", "Qwen/Qwen2.5-7B-Instruct"),
     )
 
     result = gen.generate("鋼琴", verbose=True)
