@@ -1,0 +1,10 @@
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 24px 12px;
+  background: #121213;
+  font-family: 'Noto Sans TC', 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
