@@ -6,13 +6,13 @@ AI 驅動的題目生成器。
 2. 驗題（Reviewer）— 檢查題目品質
 3. 模擬（Simulator）— AI 扮演玩家逐題猜測
 
-支援後端：OpenAI API、Hugging Face 本地模型
+使用 Hugging Face 本地模型（預設 Qwen2.5-7B-Instruct）。
 """
 
 import json
-from typing import Optional, Union
+from typing import Optional
 
-from backends import LLMBackend, create_backend
+from backends import HFBackend
 from models import (
     QuestionItem,
     QuestionSet,
@@ -34,36 +34,14 @@ from bopomofo import to_bopomofo_cells, count_bopomofo_cells
 
 
 class PhantomInkGenerator:
-    """Phantom Ink 題目生成器
-
-    支援多種 LLM 後端：
-
-    # OpenAI
-    gen = PhantomInkGenerator(backend="openai", api_key="sk-...", model="gpt-4o")
-
-    # Hugging Face 本地模型（Colab T4 可用）
-    gen = PhantomInkGenerator(backend="huggingface", hf_model="Qwen/Qwen2.5-7B-Instruct")
-    """
+    """Phantom Ink 題目生成器（Hugging Face 本地模型）"""
 
     def __init__(
         self,
-        backend: Union[str, LLMBackend] = "openai",
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
-        model: str = "gpt-4o",
-        hf_model: str = "Qwen/Qwen2.5-7B-Instruct",
+        model_name: str = "Qwen/Qwen2.5-7B-Instruct",
         max_retries: int = 3,
     ):
-        if isinstance(backend, LLMBackend):
-            self.llm = backend
-        else:
-            self.llm = create_backend(
-                backend_type=backend,
-                api_key=api_key,
-                base_url=base_url,
-                model=model,
-                hf_model=hf_model,
-            )
+        self.llm = HFBackend(model_name=model_name)
         self.max_retries = max_retries
 
     def _json_chat(
@@ -77,7 +55,6 @@ class PhantomInkGenerator:
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
-            response_format={"type": "json_object"} if self.llm.supports_json_mode() else None,
         )
         return json.loads(reply)
 
@@ -133,7 +110,6 @@ class PhantomInkGenerator:
         """階段三：模擬玩家 — AI 扮演玩家逐題猜測"""
         rounds = []
 
-        # 決定類別提示
         category_hint = self._infer_category(question_set.answer)
 
         for i, q_item in enumerate(question_set.questions):
@@ -148,7 +124,6 @@ class PhantomInkGenerator:
             for reveal_step in range(1, total_cells + 1):
                 revealed_count = reveal_step
 
-                # 建立歷史記錄
                 history_lines = []
                 for j, r in enumerate(rounds):
                     history_lines.append(
@@ -182,17 +157,14 @@ class PhantomInkGenerator:
                 want_to_guess = raw.get("want_to_guess", False)
                 guess = raw.get("current_best_guess", "")
 
-                # 檢查是否猜對
                 if want_to_guess and guess.strip() == question_set.answer:
                     guessed = True
                     break
 
-                # 如果玩家想猜但猜錯，遊戲結束
                 if want_to_guess and guess.strip() != question_set.answer:
                     guessed = False
                     break
 
-            # 記錄這回合
             revealed_display_final = " ".join(
                 cells[:revealed_count] + ["▢"] * (total_cells - revealed_count)
             )
@@ -210,7 +182,6 @@ class PhantomInkGenerator:
             if guessed:
                 break
 
-        # 計算結果
         guess_round = next(
             (r.round_number for r in reversed(rounds) if r.guessed_correctly),
             len(rounds) + 1,
@@ -252,7 +223,6 @@ class PhantomInkGenerator:
                 print(f"📝 第 {attempt + 1} 次生成 — 謎底：{answer}")
                 print(f"{'='*50}")
 
-            # 出題
             if verbose:
                 print("\n🤖 出題中...")
             try:
@@ -269,7 +239,6 @@ class PhantomInkGenerator:
                     print(f"  A{i+1}. {q.reply}")
                     print()
 
-            # 驗題
             if not skip_review:
                 if verbose:
                     print("🔍 驗題中...")
@@ -294,7 +263,6 @@ class PhantomInkGenerator:
             else:
                 review = None
 
-            # 模擬
             simulation = None
             if not skip_simulation:
                 if verbose:
@@ -314,7 +282,6 @@ class PhantomInkGenerator:
                         print(f"  太困難：{simulation.too_hard}")
                         print(f"  原因：{simulation.reason}")
 
-            # 成功！
             if verbose:
                 print(f"\n✅ 題組生成成功！（嘗試 {attempt + 1} 次）")
 
@@ -326,7 +293,6 @@ class PhantomInkGenerator:
                 retry_count=retry_count,
             )
 
-        # 所有重試都失敗
         if verbose:
             print(f"\n❌ 超過最大重試次數（{self.max_retries}），生成失敗。")
             if last_error:
@@ -362,7 +328,6 @@ class PhantomInkGenerator:
         too_easy: bool,
         too_hard: bool,
     ) -> str:
-        """建構模擬結果的原因說明"""
         total = len(rounds)
         if too_easy:
             return (
@@ -408,30 +373,10 @@ class PhantomInkGenerator:
 if __name__ == "__main__":
     import os
 
-    # 可透過環境變數切換後端
-    BACKEND = os.getenv("LLM_BACKEND", "openai")
+    gen = PhantomInkGenerator(
+        model_name=os.getenv("HF_MODEL", "Qwen/Qwen2.5-7B-Instruct"),
+    )
 
-    if BACKEND == "huggingface":
-        gen = PhantomInkGenerator(
-            backend="huggingface",
-            hf_model=os.getenv("HF_MODEL", "Qwen/Qwen2.5-7B-Instruct"),
-        )
-    else:
-        api_key = os.getenv("OPENAI_API_KEY") or os.getenv("GEMINI_API_KEY")
-        base_url = os.getenv("OPENAI_BASE_URL")
-
-        if not api_key:
-            print("請設定 OPENAI_API_KEY 或 GEMINI_API_KEY 環境變數")
-            exit(1)
-
-        gen = PhantomInkGenerator(
-            backend="openai",
-            api_key=api_key,
-            base_url=base_url,
-            model=os.getenv("LLM_MODEL", "gpt-4o"),
-        )
-
-    # 測試：產生一個題組
     result = gen.generate("鋼琴", verbose=True)
 
     if result.questions and result.questions[0].reply != "（生成失敗）":
