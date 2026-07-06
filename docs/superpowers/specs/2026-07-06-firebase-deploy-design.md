@@ -33,7 +33,7 @@
   ├─ generator/ (從 generator.py 移植)
   │    ├─ backends：groq.ts / hf.ts（直接 fetch 各自 REST API）
   │    ├─ pipeline：design → review → simulate，含重試/局部修正邏輯
-  │    ├─ bopomofo.ts（用 pinyin-pro 取代 pypinyin）
+  │    ├─ bopomofo.ts（用 pinyin-pro + pinyin-to-zhuyin 取代 pypinyin，見下方「已驗證的函式庫細節」）
   │    └─ zhconv.ts（用 opencc-js 取代 zhconv）
   └─ game/ （沿用 game.py 現有的 Wordle 風格 HTML/CSS/JS，改寫成 TS 模組）
        └─ 遊戲狀態純前端記憶體，不需要資料庫
@@ -43,6 +43,23 @@ Firebase 專案
 ```
 
 三階段生成 pipeline（出題→驗題→模擬）完全在使用者瀏覽器內執行，每一步都是對 Groq/HF 的直接 API 呼叫。沒有任何伺服器端程式碼跑在 Firebase 上。
+
+## 已驗證的函式庫細節（技術驗證結果）
+
+規劃階段實測驗證過以下細節，plan 撰寫時直接採用這些結論，不需要再重新調查：
+
+**注音轉換（`bopomofo.ts`）：**
+- `pinyin-pro` 本身**不支援**直接輸出注音（一開始的假設是錯的）。改用 `pinyin-pro`（取得帶調號數字的拼音，`toneType: 'num'`）+ `pinyin-to-zhuyin`（其 `p2z()` 函式把拼音轉成注音符號）兩個套件組合。
+- 實測這個組合對 `test_bopomofo.py` 現有測試案例（`乐器行`、`钢琴`、`演奏厅` 等）的輸出，與現有 Python 版 `pypinyin` 的 `Style.BOPOMOFO` 輸出**逐字元一致**，但需要三個正規化步驟：
+  1. 只對「原始字元屬於中日韓統一表意文字」（正規表示式 `/[一-鿿]/`）的位置做轉換；非中文字元（英文字母、數字、標點）直接跳過（不能用「轉換結果是否包含注音字元」來判斷，因為 `p2z()` 對單一英文字母也會吐出看似合法的注音字元，例如 `p2z('A')` → `˙ㄚ`）
+  2. `pinyin-pro` 的輕聲用數字 `0` 表示（如 `de0`），但 `pinyin-to-zhuyin` 預期輕聲是 `5`（或省略數字），送進 `p2z()` 前要把結尾的 `0` 換成 `5`
+  3. `p2z()` 把輕聲符號 `˙` 放在音節「前面」（如 `˙ㄉㄜ`），但現有 Python 版 `pypinyin` 的輸出習慣放在「後面」（如 `ㄉㄜ˙`）；轉換後若字串以 `˙` 開頭，要把它移到字串尾端
+  4. 現有 Python 版 `to_bopomofo()` 對第一聲（無聲調符號）會額外補上 `ˉ`；同樣邏輯搬到 JS：若結果字串最後一個字元不是 `ˊˋˇ˙` 其中之一，補上 `ˉ`
+- **已知限制（可接受的落差）：** `pinyin-pro` 與 `pypinyin` 的輕聲判斷字典不完全相同。例如「我們」的「們」，`pypinyin` 判斷為輕聲，`pinyin-pro` 在某些上下文判斷為二聲。這是兩個函式庫底層拼音字典本身的差異，不是轉換邏輯的 bug，也不值得為了追求 100% 一致而額外實作一份輕聲字典。移植時針對常見詞彙做人工抽查，遇到明顯落差記錄下來即可，不視為阻擋部署的問題。
+- **附帶發現（超出本次任務範圍，僅記錄）：** 現有 `test_bopomofo.py::test_to_bopomofo_cells_count` 目前是**壞掉的**（预期「鋼琴」為 6 格，實際程式碼行為是 7 格，因為第一聲的「鋼」會被加上額外的 `ˉ` 格）。這是現有 Python 版本裡本來就存在的測試錯誺，與本次 Firebase 移植無關，移植時應該以「實際執行結果」（7 格）為準，不要照抄這個測試裡寫錯的期望值。
+
+**簡轉繁（`zhconv.ts`）：**
+- `opencc-js` 的 `Converter({ from: 'cn', to: 'tw' })` 經實測是同步函式（字典已在套件內建置時打包好，不需要在瀏覽器內非同步下載），可以直接在 Vite 專案中 import 使用，行為與現有 Python 版 `zhconv.convert(text, "zh-tw")` 相同的範圍：只做字元級簡轉繁（例如 乐→樂、钢→鋼），**不做詞彙置換**（例如不會把「鼠標」換成「滑鼠」、「打印機」換成「印表機」）。這點兩邊函式庫都一樣，詞彙置換是靠 LLM prompt 裡的「請使用臺灣慣用詞彙」指示完成的，不是靠轉換函式庫。
 
 ## 專案結構
 
@@ -63,9 +80,9 @@ web/
     │   └── hf.ts           # 對應 backends.py 的 HFInferenceBackend
     ├── generator/
     │   ├── models.ts       # 對應 models.py 的型別（TS interface 取代 pydantic）
-    │   ├── prompts.ts      # 對應 prompts.py 的文字模板
+    │   ├── prompts.ts      # 對應 prompts.py 的文字模板（含題庫 QUESTION_BANK）
     │   └── generator.ts    # 對應 generator.py 的三階段 pipeline + 重試邏輯
-    ├── bopomofo.ts         # 對應 bopomofo.py，改用 pinyin-pro
+    ├── bopomofo.ts         # 對應 bopomofo.py，改用 pinyin-pro + pinyin-to-zhuyin
     ├── zhconv.ts           # 對應 utils.py 的簡轉繁部分，改用 opencc-js
     └── game.ts             # 對應 game.py 的 play_colab_game HTML 樣板，改寫成 TS + DOM 操作
 ```
@@ -96,7 +113,7 @@ web/
 
 ## 測試策略
 
-- `bopomofo.ts`、`zhconv.ts` 的轉換結果對照 Python 版現有測試（`test_bopomofo.py`）的案例，確保輸出一致
+- `bopomofo.ts`、`zhconv.ts` 的轉換結果對照 Python 版現有測試（`test_bopomofo.py`）的案例，確保輸出一致（除了上述已知的輕聲字典落差，以及已修正的「鋼琴應為 7 格」）
 - Pipeline 邏輯（重試、局部修正、洩題檢查）用假的 backend（回傳固定 JSON）做單元測試，不需要真的打 API
 - 部署前手動用真實 Groq Key 跑一次完整流程，確認 CORS 沒問題（唯一無法純靠單元測試驗證的風險點）
 
@@ -105,7 +122,7 @@ web/
 ```
 cd web
 npm install && npm run build
-firebase deploy --only hosting
+npx firebase-tools deploy --only hosting
 ```
 
 ## 範圍之外（Out of scope）
@@ -113,3 +130,4 @@ firebase deploy --only hosting
 - 帳號系統、遊戲紀錄保存、排行榜（使用者明確表示不需要）
 - 任何伺服器端程式碼（Cloud Functions/Cloud Run）— BYOK 架構下不需要
 - 現有 Python/Notebook 工作流程不受影響，兩者並存
+- 修復 `test_bopomofo.py` 現有的錯誤測試期望值（與本次任務無關，不在範圍內）
