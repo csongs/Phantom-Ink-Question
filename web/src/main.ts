@@ -5,7 +5,7 @@ import { HFBackend, HF_DEFAULT_MODEL } from './backends/hf';
 import type { LLMBackend } from './backends/shared';
 import { PhantomInkGenerator } from './generator/generator';
 import { toBopomofoCells } from './bopomofo';
-import { PhantomInkGame, renderGame, type GameQuestion } from './game';
+import { PhantomInkGame, renderGame, escapeHtml, type GameQuestion } from './game';
 
 export function toGameQuestions(
   questions: { question: string; reply: string }[],
@@ -40,7 +40,13 @@ export function describeGenerationError(err: unknown): string {
 }
 
 async function startGame(root: HTMLElement, settings: Settings): Promise<void> {
-  root.innerHTML = '<p class="pi-loading">🎲 正在生成題目...</p>';
+  root.innerHTML = `
+    <div class="pi-loading open">
+      <h2>生成中</h2>
+      <div class="pi-loading-spinner"></div>
+      <p>🎲 正在生成題目...</p>
+    </div>
+  `;
   try {
     const generator = new PhantomInkGenerator(buildBackend(settings));
     const result = await generator.generate({ answerMode: 'ai', numQuestions: 10 });
@@ -48,11 +54,14 @@ async function startGame(root: HTMLElement, settings: Settings): Promise<void> {
     const game = new PhantomInkGame(gameQuestions, result.answer);
     renderGame(root, game);
   } catch (err) {
-    const message = describeGenerationError(err);
-    root.innerHTML = `<div class="pi-error">
-      <p>生成失敗：${message}</p>
-      <button id="pi-retry-settings">回到設定畫面</button>
-    </div>`;
+    const message = escapeHtml(describeGenerationError(err));
+    root.innerHTML = `
+      <div class="pi-error open">
+        <h2>生成失敗</h2>
+        <p>${message}</p>
+        <button id="pi-retry-settings" class="pi-btn pi-btn-next">回到設定畫面</button>
+      </div>
+    `;
     document.getElementById('pi-retry-settings')?.addEventListener('click', () => {
       showSettingsScreen(root);
     });
@@ -61,23 +70,30 @@ async function startGame(root: HTMLElement, settings: Settings): Promise<void> {
 
 function showSettingsScreen(root: HTMLElement): void {
   const existing = loadSettings();
+  const apiKey = escapeHtml(existing?.apiKey ?? '');
+  const model = escapeHtml(existing?.model ?? '');
   root.innerHTML = `
-    <div class="pi-settings">
+    <div class="pi-settings open">
       <h2>設定</h2>
-      <label>Backend
+      <div class="pi-settings-group">
+        <label>Backend</label>
         <select id="pi-backend">
           <option value="groq" ${existing?.backend === 'hf' ? '' : 'selected'}>Groq</option>
           <option value="hf" ${existing?.backend === 'hf' ? 'selected' : ''}>Hugging Face</option>
         </select>
-      </label>
-      <label>API Key
-        <input id="pi-apikey" type="password" value="${existing?.apiKey ?? ''}" placeholder="貼上你的 API Key">
-      </label>
-      <label>Model（留空使用預設）
-        <input id="pi-model" type="text" value="${existing?.model ?? ''}">
-      </label>
+      </div>
+      <div class="pi-settings-group">
+        <label>API Key</label>
+        <input id="pi-apikey" type="password" value="${apiKey}" placeholder="貼上你的 API Key">
+      </div>
+      <div class="pi-settings-group">
+        <label>Model（留空使用預設）</label>
+        <input id="pi-model" type="text" value="${model}">
+      </div>
       <p class="pi-privacy-note">Key 只存在你目前這台裝置的瀏覽器裡，不會送到任何伺服器。</p>
-      <button id="pi-start">開始遊戲</button>
+      <div class="pi-settings-actions">
+        <button id="pi-start" class="pi-btn pi-btn-answer">開始遊戲</button>
+      </div>
     </div>
   `;
   document.getElementById('pi-start')?.addEventListener('click', () => {
