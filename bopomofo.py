@@ -20,14 +20,16 @@ def to_bopomofo(text: str) -> str:
     >>> to_bopomofo("演奏廳")
     'ㄧㄢˇ ㄗㄡˋ ㄊㄧㄥ'
     """
+    tone_marks = set("ˊˋˇ˙")
     parts = lazy_pinyin(text, style=Style.BOPOMOFO)
     clean = []
     for p in parts:
-        if p and p != text:  # 有成功轉換
+        # 只保留有注音的字元，跳過標點符號
+        if p and re.search(r"[ㄅ-ㄩ]", p):
+            # 無聲調結尾 → 第一聲，加上 ˉ
+            if p[-1] not in tone_marks:
+                p = p + "ˉ"
             clean.append(p)
-        else:
-            # 對無法轉換的字元（如英數），保留原字
-            clean.append(p if p else text)
     return " ".join(clean)
 
 
