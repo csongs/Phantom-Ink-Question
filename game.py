@@ -235,9 +235,9 @@ var state = {
 
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
-// ── 核心邏輯 ──
+// ── 核心邏輯（掛到 window 讓 onclick 能找到） ──
 
-function revealInk(){
+window.revealInk = function(){
   if(state.gameOver||state.won) return;
   var r = state.revealed[state.currentQ];
   var t = questions[state.currentQ].total;
@@ -247,7 +247,7 @@ function revealInk(){
   render();
 }
 
-function nextQuestion(){
+window.nextQuestion = function(){
   if(state.gameOver) return;
   if(state.visited.indexOf(state.currentQ)<0) state.visited.push(state.currentQ);
   if(state.currentQ+1<Q_COUNT){
@@ -262,7 +262,7 @@ function nextQuestion(){
   render();
 }
 
-function finishClues(){
+window.finishClues = function(){
   state.finalRevealed=true;
   if(state.visited.indexOf(state.currentQ)<0) state.visited.push(state.currentQ);
   if(!state.oracleFinalGranted){
@@ -273,7 +273,7 @@ function finishClues(){
   render();
 }
 
-function submitAnswer(){
+window.submitAnswer = function(){
   var inp = document.getElementById('pi-answer-input');
   if(!inp) return;
   var val = inp.value.trim();
@@ -292,7 +292,7 @@ function submitAnswer(){
   render();
 }
 
-function showAnswerInput(){
+window.showAnswerInput = function(){
   document.getElementById('pi-answer-section').classList.add('open');
   setTimeout(function(){
     var inp=document.getElementById('pi-answer-input');
@@ -300,11 +300,11 @@ function showAnswerInput(){
   },100);
 }
 
-function hideAnswerInput(){
+window.hideAnswerInput = function(){
   document.getElementById('pi-answer-section').classList.remove('open');
 }
 
-function openOracle(){
+window.openOracle = function(){
   if(state.oracleCharges<=0) return;
   var past = [];
   for(var i=0;i<state.currentQ;i++) past.push(i);
@@ -325,12 +325,12 @@ function openOracle(){
   document.getElementById('pi-game').appendChild(div);
 }
 
-function closeOracle(){
+window.closeOracle = function(){
   var el=document.getElementById('pi-oracle-overlay');
   if(el) el.remove();
 }
 
-function doOracleReveal(idx){
+window.doOracleReveal = function(idx){
   state.oracleCharges--;
   state.oracleUsed++;
   var t=questions[idx].total;
@@ -346,7 +346,7 @@ function doOracleReveal(idx){
   render();
 }
 
-function toggleClue(el){
+window.toggleClue = function(el){
   var tog=el.querySelector('.pi-clue-toggle');
   var body=el.nextElementSibling;
   if(body){body.classList.toggle('open');tog.classList.toggle('open');}

@@ -336,10 +336,10 @@ QUESTION_BANK = [
 ]
 
 
-def format_designer_prompt(answer: str, num_questions: int = 7) -> tuple:
+def format_designer_prompt(answer: str, num_questions: int = 10) -> tuple:
     """組合出題 prompt（含題庫）
 
-    num_questions: 要產生的題數（預設 7）
+    num_questions: 要產生的題數（預設 10）
     """
     hard_count = max(1, (num_questions * 2) // 5)      # ~40%
     easy_count = max(2, num_questions - hard_count - 1)  # 最後幾題接近生活

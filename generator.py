@@ -100,11 +100,11 @@ class PhantomInkGenerator:
 
     # ── Phase 1: 出題 ──────────────────────
 
-    def design_questions(self, answer: str, answer_mode: str = "ai", num_questions: int = 7) -> QuestionSet:
+    def design_questions(self, answer: str, answer_mode: str = "ai", num_questions: int = 10) -> QuestionSet:
         """階段一：出題 — AI 扮演出題老師產生問答
 
         answer_mode: "ai" = AI 填回答, "human" = 只選題目，回答留空
-        num_questions: 要出幾題（預設 7）
+        num_questions: 要出幾題（預設 10）
         """
         system, user = format_designer_prompt(answer, num_questions=num_questions)
         messages = [
@@ -386,13 +386,13 @@ class PhantomInkGenerator:
         skip_simulation: bool = True,
         verbose: bool = True,
         answer_mode: str = "ai",
-        num_questions: int = 7,
+        num_questions: int = 10,
     ) -> QuestionSetWithMeta:
         """完整流程：出題 → 驗題 → 模擬（自動重試不合格題目）
 
         answer_mode: "ai" = AI 自產謎底 + 填回答
                     "human" = 人提供謎底，AI 只填回答
-        num_questions: 要出幾題（預設 7）
+        num_questions: 要出幾題（預設 10）
         """
         # AI 自產謎底
         if answer_mode == "ai":
