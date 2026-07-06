@@ -109,7 +109,7 @@ class GroqBackend(LLMBackend):
     def __init__(
         self,
         api_key: str,
-        model: str = "qwen-2.5-coder-32b",
+        model: str = "llama-3.3-70b-versatile",
     ):
         from groq import Groq
         self._client = Groq(api_key=api_key)
