@@ -108,4 +108,19 @@ describe('PhantomInkGame', () => {
     expect(correct).toBe(false);
     expect(game.state.guesses).toBe(0);
   });
+
+  it('showAnswerInput sets answerBoxOpen to true', () => {
+    const game = new PhantomInkGame(makeQuestions(), '鋼琴');
+    expect(game.state.answerBoxOpen).toBe(false);
+    game.showAnswerInput();
+    expect(game.state.answerBoxOpen).toBe(true);
+  });
+
+  it('hideAnswerInput sets answerBoxOpen back to false', () => {
+    const game = new PhantomInkGame(makeQuestions(), '鋼琴');
+    game.showAnswerInput();
+    expect(game.state.answerBoxOpen).toBe(true);
+    game.hideAnswerInput();
+    expect(game.state.answerBoxOpen).toBe(false);
+  });
 });
