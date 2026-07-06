@@ -132,93 +132,125 @@ def _embed_cells_data(qs: QuestionSet) -> list[dict]:
 GAME_HTML_TEMPLATE = """<div id="pi-game"></div>
 <style>
 #pi-game {
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-  max-width: 520px; margin: 0 auto; padding: 20px 16px 32px;
-  color: #d7dadc; background: #121213; border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.5); user-select: none;
+  --pi-bg: #121213;
+  --pi-surface: #1e1f20;
+  --pi-border: #3a3a3c;
+  --pi-border-soft: rgba(255,255,255,0.07);
+  --pi-text: #ffffff;
+  --pi-text-dim: #8a8a8c;
+  --pi-text-faint: #5f5f61;
+  --pi-green: #538d4e;
+  --pi-green-bright: #6aaa64;
+  --pi-yellow: #b59f3b;
+  --pi-yellow-bright: #c9b458;
+  --pi-key: #565758;
+  --pi-key-dark: #3a3a3c;
+  --pi-danger: #d24040;
+  font-family: 'Noto Sans TC', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  max-width: 500px; margin: 0 auto; padding: 22px 18px 26px;
+  color: var(--pi-text); background: var(--pi-bg);
+  border: 1px solid var(--pi-border-soft); border-radius: 12px;
+  user-select: none; font-variant-numeric: tabular-nums;
 }
 #pi-game * { box-sizing: border-box; margin: 0; padding: 0; }
-.pi-header { text-align: center; font-size: 28px; font-weight: 800; color: #c084fc; letter-spacing: 6px; padding: 8px 0 18px; font-family: 'Noto Sans TC','Segoe UI',sans-serif; }
-.pi-header small { display: block; font-size: 11px; font-weight: 400; color: #666; letter-spacing: 2px; margin-top: 2px; }
-.pi-stats { display: flex; gap: 4px; margin-bottom: 16px; justify-content: center; }
-.pi-stat { background: #1a1a2e; border-radius: 8px; padding: 8px 16px; text-align: center; min-width: 70px; }
-.pi-stat-icon { font-size: 16px; }
-.pi-stat-val { font-size: 22px; font-weight: 700; color: #c084fc; }
-.pi-stat-lbl { font-size: 10px; color: #666; text-transform: uppercase; letter-spacing: 1px; }
-.pi-q-card { background: #1a1a2e; border-radius: 12px; padding: 18px; margin-bottom: 14px; border: 1px solid rgba(192,132,252,0.12); }
-.pi-q-num { font-size: 11px; color: #666; letter-spacing: 1px; margin-bottom: 8px; }
-.pi-q-text { font-size: 16px; font-weight: 600; line-height: 1.6; margin-bottom: 14px; color: #f0f0f0; }
+/* Header */
+.pi-header { text-align: center; font-size: 30px; font-weight: 800; color: var(--pi-text); letter-spacing: 8px; padding: 4px 0 16px; margin-bottom: 16px; border-bottom: 1px solid var(--pi-border); }
+.pi-header small { display: block; font-size: 10px; font-weight: 600; color: var(--pi-text-dim); letter-spacing: 3px; margin-top: 6px; text-transform: uppercase; }
+/* Stats */
+.pi-stats { display: flex; justify-content: center; margin-bottom: 18px; }
+.pi-stat { display: flex; flex-direction: column; align-items: center; padding: 0 18px; position: relative; }
+.pi-stat:not(:first-child)::before { content: ''; position: absolute; left: 0; top: 2px; bottom: 2px; width: 1px; background: var(--pi-border); }
+.pi-stat-icon { font-size: 13px; margin-bottom: 2px; opacity: 0.85; }
+.pi-stat-val { font-size: 24px; font-weight: 700; color: var(--pi-text); line-height: 1.1; }
+.pi-stat-lbl { font-size: 10px; color: var(--pi-text-dim); letter-spacing: 1px; margin-top: 2px; }
+/* Question card */
+.pi-q-card { background: var(--pi-surface); border-radius: 8px; padding: 18px; margin-bottom: 14px; border: 1px solid var(--pi-border-soft); }
+.pi-q-num { font-size: 11px; color: var(--pi-text-dim); letter-spacing: 1px; margin-bottom: 8px; font-weight: 700; }
+.pi-q-text { font-size: 16px; font-weight: 600; line-height: 1.6; margin-bottom: 16px; color: var(--pi-text); }
 /* Wordle-style tiles */
-.pi-tiles { display: flex; gap: 5px; flex-wrap: wrap; justify-content: center; min-height: 48px; padding: 4px 0; }
-.pi-tile { width: 46px; height: 46px; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 700; border-radius: 4px; transition: background 0.2s; border: 2px solid #3a3a3c; background: transparent; color: transparent; }
-.pi-tile.revealed { border-color: #c084fc; background: #2d1f5e; color: #c084fc; animation: tileFlip 0.4s ease; }
+.pi-tiles { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; min-height: 48px; padding: 4px 0; }
+.pi-tile { --tile-fg: var(--pi-green); width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; font-size: 19px; font-weight: 700; border-radius: 3px; border: 2px solid var(--pi-border); background: transparent; color: transparent; }
+.pi-tile.revealed { border-color: var(--tile-fg); background: var(--tile-fg); color: #fff; animation: tileFlip 0.45s ease; }
+.pi-tile.revealed.oracle { --tile-fg: var(--pi-yellow); }
 @keyframes tileFlip {
-  0% { transform: rotateX(0deg); border-color: #3a3a3c; background: transparent; color: transparent; }
-  40% { transform: rotateX(-90deg); border-color: #3a3a3c; background: transparent; color: transparent; }
-  100% { transform: rotateX(0deg); border-color: #c084fc; background: #2d1f5e; color: #c084fc; }
+  0%, 45% { transform: rotateX(0deg); border-color: var(--pi-border); background: transparent; color: transparent; }
+  55% { transform: rotateX(-90deg); border-color: var(--pi-border); background: transparent; color: transparent; }
+  100% { transform: rotateX(0deg); border-color: var(--tile-fg); background: var(--tile-fg); color: #fff; }
 }
-.pi-ink-label { text-align: center; font-size: 11px; color: #666; margin-top: 8px; }
+.pi-ink-label { text-align: center; font-size: 11px; color: var(--pi-text-dim); margin-top: 10px; }
 /* Past clues */
 .pi-clues { margin-bottom: 14px; }
-.pi-clue-card { background: #1a1a2e; border-radius: 10px; margin-bottom: 6px; border: 1px solid rgba(192,132,252,0.08); overflow: hidden; }
-.pi-clue-hdr { display: flex; align-items: center; gap: 8px; padding: 10px 14px; cursor: pointer; font-size: 13px; color: #888; transition: background 0.2s; }
-.pi-clue-hdr:hover { background: rgba(192,132,252,0.06); }
-.pi-clue-arrow { transition: transform 0.2s; font-size: 11px; }
+.pi-clue-card { background: var(--pi-surface); border-radius: 8px; margin-bottom: 6px; border: 1px solid var(--pi-border-soft); overflow: hidden; }
+.pi-clue-hdr { display: flex; align-items: center; gap: 8px; padding: 10px 14px; cursor: pointer; font-size: 13px; color: var(--pi-text-dim); transition: background 0.2s; }
+.pi-clue-hdr:hover { background: rgba(255,255,255,0.05); }
+.pi-clue-arrow { transition: transform 0.2s; font-size: 10px; }
 .pi-clue-arrow.open { transform: rotate(90deg); }
 .pi-clue-body { padding: 0 14px 12px; display: none; }
 .pi-clue-body.open { display: block; }
-.pi-clue-q { font-size: 13px; margin-bottom: 6px; }
+.pi-clue-q { font-size: 13px; margin-bottom: 8px; color: var(--pi-text); }
 .pi-clue-tiles { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
-.pi-clue-tile { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 600; border-radius: 4px; border: 2px solid #3a3a3c; background: #2d1f5e; color: #c084fc; }
-.pi-clue-ink-cnt { font-size: 11px; color: #666; margin-top: 4px; }
-/* Buttons */
-.pi-btns { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; justify-content: center; }
-.pi-btn { padding: 10px 14px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
-.pi-btn:disabled { opacity: 0.25; cursor: default; transform: none !important; }
+.pi-clue-tile { --tile-fg: var(--pi-green); width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; border-radius: 3px; border: 2px solid var(--tile-fg); background: var(--tile-fg); color: #fff; }
+.pi-clue-tile.oracle { --tile-fg: var(--pi-yellow); }
+.pi-clue-ink-cnt { font-size: 11px; color: var(--pi-text-faint); margin-top: 6px; }
+/* Buttons — Wordle keyboard style */
+.pi-btns { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.pi-btns-row { display: flex; gap: 8px; }
+.pi-btns-row .pi-btn { flex: 1; }
+.pi-btn { height: 44px; border: none; border-radius: 6px; font-size: 13px; font-weight: 700; letter-spacing: 0.5px; cursor: pointer; background: var(--pi-key); color: #fff; display: flex; align-items: center; justify-content: center; gap: 6px; transition: filter 0.15s, transform 0.1s; white-space: nowrap; }
+.pi-btn:disabled { opacity: 0.3; cursor: default; transform: none !important; }
 .pi-btn:hover:not(:disabled) { filter: brightness(1.15); }
 .pi-btn:active:not(:disabled) { transform: scale(0.96); }
-.pi-btn-ink { background: #3b82f6; color: #fff; }
-.pi-btn-next { background: #374151; color: #ccc; }
-.pi-btn-finish { background: #d97706; color: #fff; }
-.pi-btn-answer { background: #22c55e; color: #fff; }
-.pi-btn-oracle { background: #7c3aed; color: #fff; }
+.pi-btn-ink { background: var(--pi-key); }
+.pi-btn-next, .pi-btn-finish { background: var(--pi-key-dark); color: #ccc; }
+.pi-btn-answer { background: var(--pi-green); }
+.pi-btn-oracle { background: var(--pi-yellow); color: #1a1a1b; }
 /* Answer input */
-.pi-answer-box { background: #1a1a2e; border-radius: 12px; padding: 16px; margin-bottom: 14px; display: none; border: 1px solid rgba(192,132,252,0.12); }
+.pi-answer-box { background: var(--pi-surface); border-radius: 8px; padding: 16px; margin-bottom: 14px; display: none; border: 1px solid var(--pi-border-soft); }
 .pi-answer-box.open { display: block; }
-.pi-answer-box input { width: 100%; padding: 12px 14px; border: 2px solid #3a3a3c; border-radius: 8px; font-size: 18px; background: #121213; color: #d7dadc; outline: none; margin-bottom: 10px; text-align: center; letter-spacing: 4px; transition: border-color 0.2s; }
-.pi-answer-box input:focus { border-color: #7c3aed; }
-.pi-answer-actions { display: flex; gap: 8px; justify-content: center; }
+.pi-answer-box input { width: 100%; padding: 12px 14px; border: 2px solid var(--pi-border); border-radius: 6px; font-size: 18px; font-weight: 700; background: var(--pi-bg); color: var(--pi-text); outline: none; margin-bottom: 10px; text-align: center; letter-spacing: 4px; transition: border-color 0.2s; }
+.pi-answer-box input:focus { border-color: var(--pi-green-bright); }
+.pi-answer-box input.shake { border-color: var(--pi-danger); animation: shake 0.4s ease; }
+@keyframes shake { 20%,60% { transform: translateX(-6px); } 40%,80% { transform: translateX(6px); } 100% { transform: translateX(0); } }
+.pi-answer-actions { display: flex; gap: 8px; }
+.pi-answer-actions .pi-btn { flex: 1; }
 /* Oracle overlay */
-.pi-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1000; display: none; }
+.pi-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); align-items: center; justify-content: center; z-index: 1000; display: none; }
 .pi-overlay.open { display: flex; }
-.pi-dialog { background: #121213; border-radius: 14px; padding: 24px; max-width: 340px; width: 90%; border: 1px solid rgba(192,132,252,0.25); }
-.pi-dialog-title { font-size: 15px; font-weight: 600; margin-bottom: 14px; text-align: center; color: #c084fc; }
-.pi-dialog-opt { display: block; width: 100%; padding: 10px 14px; margin-bottom: 6px; background: #1a1a2e; border: 1px solid rgba(192,132,252,0.12); border-radius: 8px; color: #d7dadc; cursor: pointer; text-align: left; font-size: 13px; transition: background 0.15s; }
-.pi-dialog-opt:hover { background: #2d1f5e; }
-.pi-dialog-close { display: block; margin: 10px auto 0; padding: 6px 20px; background: #3a3a3c; border: none; border-radius: 6px; color: #888; cursor: pointer; font-size: 12px; }
+.pi-dialog { background: var(--pi-surface); border-radius: 10px; padding: 22px; max-width: 340px; width: 90%; border: 1px solid rgba(181,159,59,0.35); }
+.pi-dialog-title { font-size: 15px; font-weight: 700; margin-bottom: 14px; text-align: center; color: var(--pi-yellow-bright); }
+.pi-dialog-opt { display: block; width: 100%; padding: 10px 14px; margin-bottom: 6px; background: var(--pi-bg); border: 1px solid var(--pi-border); border-radius: 6px; color: var(--pi-text); cursor: pointer; text-align: left; font-size: 13px; transition: border-color 0.15s; }
+.pi-dialog-opt:hover { border-color: var(--pi-yellow); }
+.pi-dialog-close { display: block; margin: 10px auto 0; padding: 6px 20px; background: var(--pi-key-dark); border: none; border-radius: 6px; color: var(--pi-text-dim); cursor: pointer; font-size: 12px; }
 /* Notif */
-.pi-notif { background: rgba(124,58,237,0.15); border: 1px solid rgba(192,132,252,0.25); border-radius: 10px; padding: 10px 14px; margin-bottom: 12px; font-size: 13px; color: #c084fc; text-align: center; animation: fadeIn 0.3s ease; }
+.pi-notif { background: rgba(181,159,59,0.12); border: 1px solid rgba(181,159,59,0.35); border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; font-size: 13px; color: var(--pi-yellow-bright); text-align: center; animation: fadeIn 0.3s ease; }
 @keyframes fadeIn { 0% { opacity:0; transform:translateY(-6px); } 100% { opacity:1; transform:translateY(0); } }
 /* Oracle flash */
-.pi-flash { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); background: rgba(124,58,237,0.95); color: #fff; padding: 18px 28px; border-radius: 12px; font-size: 16px; font-weight: 600; z-index: 999; animation: flashAnim 1.4s ease forwards; pointer-events: none; }
-@keyframes flashAnim { 0% { opacity:0; transform:translate(-50%,-50%) scale(0.8); } 15% { opacity:1; transform:translate(-50%,-50%) scale(1); } 75% { opacity:1; } 100% { opacity:0; transform:translate(-50%,-50%) scale(0.9); } }
+.pi-flash { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); background: var(--pi-yellow); color: #1a1a1b; padding: 16px 26px; border-radius: 8px; font-size: 15px; font-weight: 700; z-index: 999; animation: flashAnim 1.4s ease forwards; pointer-events: none; }
+@keyframes flashAnim { 0% { opacity:0; transform:translate(-50%,-50%) scale(0.85); } 15% { opacity:1; transform:translate(-50%,-50%) scale(1); } 75% { opacity:1; } 100% { opacity:0; transform:translate(-50%,-50%) scale(0.92); } }
 /* Results */
-.pi-result { text-align: center; padding: 24px 16px; }
-.pi-result-icon { font-size: 44px; margin-bottom: 10px; }
-.pi-result-title { font-size: 22px; font-weight: 700; margin-bottom: 16px; color: #c084fc; }
-.pi-result-grid { display: flex; gap: 8px; justify-content: center; margin-bottom: 20px; }
-.pi-result-stat { background: #1a1a2e; border-radius: 10px; padding: 12px 18px; text-align: center; min-width: 80px; }
-.pi-result-stat-val { font-size: 26px; font-weight: 700; color: #c084fc; }
-.pi-result-stat-lbl { font-size: 10px; color: #666; margin-top: 2px; }
-.pi-result-stars { font-size: 26px; letter-spacing: 3px; margin-bottom: 16px; }
-.pi-result-answer { margin-bottom: 16px; font-size: 14px; color: #888; }
-.pi-result-answer strong { color: #c084fc; font-weight: 700; font-size: 16px; }
-.pi-restart { display: inline-block; padding: 12px 32px; border: none; border-radius: 10px; font-size: 15px; font-weight: 600; background: #7c3aed; color: #fff; cursor: pointer; transition: background 0.2s; }
-.pi-restart:hover { background: #6d28d9; }
+.pi-result { text-align: center; padding: 20px 12px 8px; }
+.pi-result-icon { font-size: 42px; margin-bottom: 8px; }
+.pi-result-title { font-size: 22px; font-weight: 800; margin-bottom: 4px; color: var(--pi-text); }
+.pi-result-rating { font-size: 13px; color: var(--pi-yellow-bright); font-weight: 600; margin-bottom: 16px; letter-spacing: 1px; }
+.pi-result-grid { display: flex; justify-content: center; margin-bottom: 18px; padding-bottom: 16px; border-bottom: 1px solid var(--pi-border); }
+.pi-result-stat { display: flex; flex-direction: column; align-items: center; padding: 0 20px; position: relative; }
+.pi-result-stat:not(:first-child)::before { content: ''; position: absolute; left: 0; top: 2px; bottom: 2px; width: 1px; background: var(--pi-border); }
+.pi-result-stat-val { font-size: 26px; font-weight: 700; color: var(--pi-text); }
+.pi-result-stat-lbl { font-size: 10px; color: var(--pi-text-dim); margin-top: 4px; letter-spacing: 1px; }
+.pi-result-stars { font-size: 22px; letter-spacing: 4px; margin-bottom: 16px; color: var(--pi-yellow-bright); }
+.pi-result-answer { margin-bottom: 18px; font-size: 14px; color: var(--pi-text-dim); }
+.pi-result-answer strong { color: var(--pi-green-bright); font-weight: 800; font-size: 17px; }
+.pi-restart { display: block; width: 100%; padding: 14px; border: none; border-radius: 6px; font-size: 15px; font-weight: 700; letter-spacing: 1px; background: var(--pi-green); color: #fff; cursor: pointer; transition: filter 0.2s; }
+.pi-restart:hover { filter: brightness(1.15); }
 /* Progress bar */
-.pi-progress { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; color: #666; }
-.pi-progress-bar { flex: 1; height: 4px; background: #1a1a2e; border-radius: 2px; overflow: hidden; }
-.pi-progress-fill { height: 100%; background: linear-gradient(90deg, #7c3aed, #c084fc); border-radius: 2px; transition: width 0.4s ease; }
+.pi-progress { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 11px; color: var(--pi-text-dim); }
+.pi-progress-bar { flex: 1; height: 4px; background: var(--pi-surface); border-radius: 2px; overflow: hidden; }
+.pi-progress-fill { height: 100%; background: var(--pi-green-bright); border-radius: 2px; transition: width 0.4s ease; }
+/* Responsive */
+@media (max-width: 380px) {
+  .pi-tile { width: 38px; height: 38px; font-size: 16px; }
+  .pi-header { font-size: 24px; letter-spacing: 5px; }
+}
 </style>
 <script>
 (function(){
@@ -234,12 +266,14 @@ var state = {
   guesses: 0,
   oracleCharges: 0,
   oracleUsed: 0,
+  oracleCells: {},
   won: false,
   gameOver: false,
   oracleQ5Granted: false,
   oracleFinalGranted: false,
   finalRevealed: false,
   notifMsg: '',
+  answerBoxOpen: false,
 };
 
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
@@ -287,29 +321,34 @@ window.submitAnswer = function(){
   var val = inp.value.trim();
   if(!val) return;
   state.guesses++;
-  if(val===ANSWER){
+  var wrong = (val!==ANSWER);
+  if(wrong){
+    state.ink+=3;
+  } else {
     state.won=true;
     state.gameOver=true;
-  } else {
-    state.ink+=3;
-    inp.value='';
-    inp.focus();
-    inp.style.borderColor='#ef4444';
-    setTimeout(function(){inp.style.borderColor='#3a3a3c';},600);
   }
   render();
+  if(wrong){
+    var inp2 = document.getElementById('pi-input');
+    if(inp2){
+      inp2.classList.add('shake');
+      inp2.focus();
+      setTimeout(function(){ if(inp2) inp2.classList.remove('shake'); },400);
+    }
+  }
 }
 
 window.showAnswerInput = function(){
-  document.getElementById('pi-answer-box').classList.add('open');
-  setTimeout(function(){
-    var inp=document.getElementById('pi-input');
-    if(inp) inp.focus();
-  },100);
+  state.answerBoxOpen = true;
+  render();
+  var inp=document.getElementById('pi-input');
+  if(inp) inp.focus();
 }
 
 window.hideAnswerInput = function(){
-  document.getElementById('pi-answer-box').classList.remove('open');
+  state.answerBoxOpen = false;
+  render();
 }
 
 window.openOracle = function(){
@@ -341,10 +380,13 @@ window.closeOracle = function(){
 window.doOracleReveal = function(idx){
   state.oracleCharges--;
   state.oracleUsed++;
-  state.revealed[idx]=Math.min(state.revealed[idx]+1,questions[idx].total);
+  var pos = state.revealed[idx];
+  state.revealed[idx]=Math.min(pos+1,questions[idx].total);
+  if(!state.oracleCells[idx]) state.oracleCells[idx]=[];
+  state.oracleCells[idx].push(pos);
   state.ink++;
   closeOracle();
-  var cell=questions[idx].cells[state.revealed[idx]-1];
+  var cell=questions[idx].cells[pos];
   var flash=document.createElement('div');
   flash.className='pi-flash';
   flash.textContent='Q'+(idx+1)+' 揭露：'+(cell||'。');
@@ -360,6 +402,11 @@ window.toggleClue = function(el){
 }
 
 // ── Render ──
+
+function isOracleCell(qIdx, cellIdx){
+  var list = state.oracleCells[qIdx];
+  return list && list.indexOf(cellIdx)>=0;
+}
 
 function render(){
   var cur=state.currentQ;
@@ -394,7 +441,8 @@ function render(){
       '<div class="pi-q-text">'+esc(q.question)+'</div>'+
       '<div class="pi-tiles">';
     for(var i=0;i<r;i++){
-      html+='<div class="pi-tile revealed">'+q.cells[i]+'</div>';
+      var oCls = isOracleCell(cur,i) ? ' oracle' : '';
+      html+='<div class="pi-tile revealed'+oCls+'">'+q.cells[i]+'</div>';
     }
     html+='</div>';
     if(r>0){
@@ -414,7 +462,8 @@ function render(){
       var autoOpen=vi<3?'open':'';
       var tileHtml='';
       for(var ti=0;ti<cr;ti++){
-        tileHtml+='<div class="pi-clue-tile">'+cq.cells[ti]+'</div>';
+        var ocCls = isOracleCell(idx,ti) ? ' oracle' : '';
+        tileHtml+='<div class="pi-clue-tile'+ocCls+'">'+cq.cells[ti]+'</div>';
       }
       html+='<div class="pi-clue-card">'+
         '<div class="pi-clue-hdr" onclick="toggleClue(this)">'+
@@ -431,13 +480,16 @@ function render(){
     html+='</div>';
   }
 
-  // Buttons
+  // Buttons — primary action full-width, secondary actions split evenly
   if(!state.gameOver){
     var inkDisabled=(allDone||state.finalRevealed)?'disabled':'';
     var nextDisabled=(state.finalRevealed)?'disabled':'';
     var oracleDisabled=(state.oracleCharges<=0||hasPast===false)?'disabled':'';
     html+='<div class="pi-btns">'+
-      '<button class="pi-btn pi-btn-ink" onclick="revealInk()" '+inkDisabled+'>🖋 顯示墨水</button>';
+      '<div class="pi-btns-row">'+
+        '<button class="pi-btn pi-btn-ink" onclick="revealInk()" '+inkDisabled+'>🖋 顯示墨水</button>'+
+      '</div>'+
+      '<div class="pi-btns-row">';
     if(showFinish){
       html+='<button class="pi-btn pi-btn-finish" onclick="finishClues()">📜 完成線索</button>';
     }
@@ -446,13 +498,14 @@ function render(){
     }
     html+='<button class="pi-btn pi-btn-answer" onclick="showAnswerInput()">🎯 提交謎底</button>'+
       '<button class="pi-btn pi-btn-oracle" onclick="openOracle()" '+oracleDisabled+'>👁 老天有眼</button>'+
+    '</div>'+
     '</div>';
   }
 
   // Answer input
   if(!state.gameOver){
-    html+='<div class="pi-answer-box" id="pi-answer-box">'+
-      '<input id="pi-input" placeholder="輸入謎底…" onkeydown="if(event.key===\\'Enter\\')submitAnswer()">'+
+    html+='<div class="pi-answer-box'+(state.answerBoxOpen?' open':'')+'" id="pi-answer-box">'+
+      '<input id="pi-input" placeholder="輸入謎底…">'+
       '<div class="pi-answer-actions">'+
         '<button class="pi-btn pi-btn-answer" onclick="submitAnswer()">送出</button>'+
         '<button class="pi-btn pi-btn-next" onclick="hideAnswerInput()">取消</button>'+
@@ -480,9 +533,18 @@ function render(){
     else if(state.ink<=20) stars=3;
     else stars=2;
     var starStr='★'.repeat(stars)+'☆'.repeat(5-stars);
+    var ratingWord='';
+    if(state.won){
+      if(stars>=5) ratingWord='天才級表現！';
+      else if(stars>=4) ratingWord='非常厲害！';
+      else if(stars>=3) ratingWord='表現不錯！';
+      else ratingWord='驚險過關！';
+    }
+    var ratingHtml = ratingWord ? '<div class="pi-result-rating">'+ratingWord+'</div>' : '';
     html+='<div class="pi-result">'+
       '<div class="pi-result-icon">'+(state.won?'🎉':'😢')+'</div>'+
       '<div class="pi-result-title">'+(state.won?'猜對了！':'遊戲結束')+'</div>'+
+      ratingHtml+
       '<div class="pi-result-grid">'+
         '<div class="pi-result-stat"><div class="pi-result-stat-val">'+state.ink+'</div><div class="pi-result-stat-lbl">墨水</div></div>'+
         '<div class="pi-result-stat"><div class="pi-result-stat-val">'+state.guesses+'</div><div class="pi-result-stat-lbl">猜測</div></div>'+
@@ -496,9 +558,10 @@ function render(){
 
   document.getElementById('pi-game').innerHTML=html;
 
-  // Focus answer input if open
+  // Focus answer input if open, and wire up Enter-to-submit
   var inp2=document.getElementById('pi-input');
-  if(inp2 && document.getElementById('pi-answer-box').classList.contains('open')){
+  if(inp2 && state.answerBoxOpen){
+    inp2.onkeydown=function(e){ if(e.key==='Enter') submitAnswer(); };
     inp2.focus();
   }
 }
