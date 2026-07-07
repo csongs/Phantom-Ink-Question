@@ -261,13 +261,18 @@ describe('PhantomInkGenerator.generate', () => {
     ]);
   });
 
-  it('rejects an answer flagged as Mainland-Chinese wording and regenerates', async () => {
+  it('swaps a Mainland-flagged answer to the provided Taiwan term without regenerating', async () => {
+    const swappedDesign = JSON.stringify({
+      answer: '滑鼠',
+      questions: [
+        { question: '它由什麼材料製成？', reply: '塑膠外殼.' },
+        { question: '它是何種顏色？', reply: '黑色.' },
+      ],
+    });
     const backend = new FakeBackend([
       JSON.stringify({ answer: '鼠标' }),
       JSON.stringify({ is_mainland_term: true, taiwan_term: '滑鼠', reason: '大陸慣用語' }),
-      JSON.stringify({ answer: '滑鼠' }),
-      JSON.stringify({ is_mainland_term: false }),
-      GOOD_DESIGN_REPLY,
+      swappedDesign,
       PASSING_REVIEW_REPLY,
     ]);
     const generator = new PhantomInkGenerator(backend, 3);
@@ -279,43 +284,66 @@ describe('PhantomInkGenerator.generate', () => {
       skipSimulation: true,
     });
 
-    expect(result.answer).toBe('鋼琴');
-    // Second generateAnswer call's usedHint must mention the rejected candidate
-    // (generateAnswer converts it to traditional Chinese before returning).
-    const secondAnswerCall = backend.calls[2];
-    expect(secondAnswerCall.messages.some((m) => m.content.includes('鼠標'))).toBe(true);
+    // The Taiwan term is used directly — designQuestions runs on 滑鼠.
+    expect(result.answer).toBe('滑鼠');
+    // Crucially, no second answer was generated: only one call carries the
+    // answer-generator prompt.
+    const genCalls = backend.calls.filter((c) =>
+      c.messages.some((m) => m.content.includes('產生一個適合當作謎底')),
+    );
+    expect(genCalls.length).toBe(1);
   });
 
-  it('gives up and returns the failure placeholder if every answer is flagged as Mainland wording', async () => {
+  it('regenerates only when a Mainland-flagged answer has no Taiwan equivalent', async () => {
     const backend = new FakeBackend([
       JSON.stringify({ answer: '鼠标' }),
-      JSON.stringify({ is_mainland_term: true, taiwan_term: '滑鼠', reason: '大陸慣用語' }),
+      JSON.stringify({ is_mainland_term: true, taiwan_term: '', reason: '大陸慣用語' }),
       JSON.stringify({ answer: '视频' }),
-      JSON.stringify({ is_mainland_term: true, taiwan_term: '影片', reason: '大陸慣用語' }),
+      JSON.stringify({ is_mainland_term: true, taiwan_term: '', reason: '大陸慣用語' }),
     ]);
     const generator = new PhantomInkGenerator(backend, 2);
 
     const result = await generator.generate({ answerMode: 'ai', numQuestions: 2 });
 
+    // Both flagged, neither offered a Taiwan term → exhaust retries → placeholder.
     expect(result.questions).toEqual([
       { question: '（生成失敗）', reply: '（生成失敗）', isCustom: false },
     ]);
+    // The regeneration's usedHint must mention the first rejected candidate.
+    const secondGen = backend.calls[2];
+    expect(secondGen.messages.some((m) => m.content.includes('鼠標'))).toBe(true);
   });
 
-  it('attributes a checkAnswerLocale failure to the locale check, not "謎底生成"', async () => {
-    // Regression: generateAnswer succeeded (answer produced) but the
-    // subsequent locale-check call threw — the progress log must not claim
-    // answer *generation* failed when it was the recheck that failed.
+  it('accepts the candidate answer when the locale check itself throws (optional gate)', async () => {
+    // Regression: a token-exhausted locale check on qwen3-32b must not discard
+    // an otherwise-good Taiwan answer — the flow proceeds with it unchecked.
+    const design = JSON.stringify({
+      answer: '急診',
+      questions: [
+        { question: '它由什麼材料製成？', reply: '無形服務.' },
+        { question: '它是何種顏色？', reply: '白色.' },
+      ],
+    });
     const backend = new FakeBackend([
-      JSON.stringify({ answer: '鋼琴' }),
-      'not valid json',
+      JSON.stringify({ answer: '急診' }),
+      'not valid json', // checkAnswerLocale throws
+      design,
+      PASSING_REVIEW_REPLY,
     ]);
-    const generator = new PhantomInkGenerator(backend, 1);
+    const generator = new PhantomInkGenerator(backend, 3);
     const messages: string[] = [];
 
-    await generator.generate({ answerMode: 'ai', numQuestions: 2, onProgress: (m) => messages.push(m) });
+    const result = await generator.generate({
+      answerMode: 'ai',
+      numQuestions: 2,
+      skipReview: false,
+      skipSimulation: true,
+      onProgress: (m) => messages.push(m),
+    });
 
+    expect(result.answer).toBe('急診');
     expect(messages.some((m) => m.includes('謎底用語檢查失敗'))).toBe(true);
+    // A failed *check* is a warning, not a fatal 謎底生成失敗.
     expect(messages.some((m) => m.startsWith('❌ 謎底生成失敗'))).toBe(false);
   });
 });

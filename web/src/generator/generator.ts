@@ -366,29 +366,46 @@ export class PhantomInkGenerator {
       let answerOk = false;
       const rejectedAnswers: string[] = [];
       for (let i = 0; i < this.maxRetries && !answerOk; i++) {
-        let candidate: string | undefined;
+        let candidate: string;
         try {
           candidate = await this.generateAnswer([...usedAnswers, ...rejectedAnswers], onProgress);
           onProgress?.(`🎲 AI 產生的謎底：${candidate}`);
+        } catch (err) {
+          onProgress?.(`❌ 謎底生成失敗（第 ${i + 1}/${this.maxRetries} 次）：${(err as Error).message}`);
+          continue;
+        }
 
-          const localeCheck = await this.checkAnswerLocale(candidate);
-          if (localeCheck.isMainlandTerm) {
-            onProgress?.(
-              `⚠️  「${candidate}」判斷為中國大陸用語（${localeCheck.reason}），重新產生...`,
-            );
-            rejectedAnswers.push(candidate);
-            continue;
-          }
-
+        // The locale recheck is an *optional* quality gate. qwen3-32b is a
+        // reasoning model whose hidden thinking can exhaust the token budget on
+        // this heavier judgment prompt — a failed *check* must never discard an
+        // otherwise-good answer, so on error we accept the candidate unchecked.
+        let localeCheck: Awaited<ReturnType<PhantomInkGenerator['checkAnswerLocale']>>;
+        try {
+          localeCheck = await this.checkAnswerLocale(candidate);
+        } catch (err) {
+          onProgress?.(`⚠️  謎底用語檢查失敗，略過檢查直接採用「${candidate}」：${(err as Error).message}`);
           answer = candidate;
           answerOk = true;
-        } catch (err) {
-          // candidate may already be set here (generateAnswer succeeded but
-          // checkAnswerLocale threw) — don't blame "謎底生成" when it was the
-          // locale recheck that actually failed.
-          const stage = candidate ? '謎底用語檢查' : '謎底生成';
-          onProgress?.(`❌ ${stage}失敗（第 ${i + 1}/${this.maxRetries} 次）：${(err as Error).message}`);
+          break;
         }
+
+        if (localeCheck.isMainlandTerm) {
+          // If the check already told us the Taiwan equivalent, swap it in
+          // instead of paying for a whole new generation round.
+          const twTerm = toTraditional((localeCheck.taiwanTerm ?? '').trim());
+          if (twTerm) {
+            onProgress?.(`⚠️  「${candidate}」為中國大陸用語，改用臺灣用語「${twTerm}」（${localeCheck.reason}）`);
+            answer = twTerm;
+            answerOk = true;
+          } else {
+            onProgress?.(`⚠️  「${candidate}」判斷為中國大陸用語（${localeCheck.reason}），重新產生...`);
+            rejectedAnswers.push(candidate);
+          }
+          continue;
+        }
+
+        answer = candidate;
+        answerOk = true;
       }
       if (!answerOk) {
         onProgress?.('❌ 謎底生成多次失敗，放棄本次生成');
