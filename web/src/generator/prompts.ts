@@ -173,7 +173,9 @@ export function answerGeneratorPrompt(seed: string, usedHint: string): string {
 - 與「${seed}」有關
 - 兩個字或三個字
 - ${usedHint}
-- 只輸出一個詞，不要其他任何文字、不要解釋、不要標點符號`;
+- 只輸出一個詞
+
+JSON 格式：{"answer": "..."}`;
 }
 
 export const ANSWER_SEEDS: readonly string[] = [
