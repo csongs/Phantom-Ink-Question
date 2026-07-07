@@ -152,4 +152,35 @@ describe('PhantomInkGenerator.generate', () => {
       { question: '（生成失敗）', reply: '（生成失敗）', isCustom: false },
     ]);
   });
+
+  it('retries a failed generateAnswer (e.g. Groq json_validate_failed) and still completes', async () => {
+    const backend = new FakeBackend([
+      'not valid json',
+      JSON.stringify({ answer: '鋼琴' }),
+      GOOD_DESIGN_REPLY,
+      PASSING_REVIEW_REPLY,
+    ]);
+    const generator = new PhantomInkGenerator(backend, 3);
+
+    const result = await generator.generate({
+      answerMode: 'ai',
+      numQuestions: 2,
+      skipReview: false,
+      skipSimulation: true,
+    });
+
+    expect(result.answer).toBe('鋼琴');
+    expect(result.questions.length).toBe(2);
+  });
+
+  it('returns the failure placeholder if generateAnswer exhausts every retry', async () => {
+    const backend = new FakeBackend(['not json', 'still not json']);
+    const generator = new PhantomInkGenerator(backend, 2);
+
+    const result = await generator.generate({ answerMode: 'ai', numQuestions: 2 });
+
+    expect(result.questions).toEqual([
+      { question: '（生成失敗）', reply: '（生成失敗）', isCustom: false },
+    ]);
+  });
 });

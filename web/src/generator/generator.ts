@@ -244,10 +244,12 @@ export class PhantomInkGenerator {
         { role: 'user', content: answerGeneratorPrompt(seed, usedHint) },
       ],
       0.7,
-      // Generous headroom: it's unclear whether hidden reasoning tokens count
-      // against this budget, and a truncated-mid-thought response is exactly
-      // what caused the json_validate_failed regression this replaces.
-      200,
+      // qwen3-32b has no documented way to fully disable reasoning via Groq
+      // (reasoning_effort:'none' is only supported on Qwen 3.6 27B) — hidden
+      // reasoning tokens still consume this budget, and 200 was confirmed
+      // (via 3 identical retries) to be consistently too tight for this
+      // model's thinking length even on a trivial one-word prompt.
+      1024,
       (rawReply) => onProgress?.(`🔎 AI 原始回應（謎底）：${rawReply}`),
     );
     return (raw.answer ?? '').trim();
@@ -320,7 +322,30 @@ export class PhantomInkGenerator {
 
     if (answerMode === 'ai') {
       onProgress?.('🎲 AI 思考謎底中...');
-      answer = await this.generateAnswer(usedAnswers, onProgress);
+      // Reasoning models can intermittently fail Groq's json_object validation
+      // even with reasoning_format set correctly (a known Groq-side gap — see
+      // https://community.groq.com/t/get-reasoning-key-when-json-validate-failed/785).
+      // Unlike designQuestions below, this call previously had zero retry
+      // safety net, so any such failure aborted generation entirely.
+      let answerOk = false;
+      for (let i = 0; i < this.maxRetries && !answerOk; i++) {
+        try {
+          answer = await this.generateAnswer(usedAnswers, onProgress);
+          answerOk = true;
+        } catch (err) {
+          onProgress?.(`❌ 謎底生成失敗（第 ${i + 1}/${this.maxRetries} 次）：${(err as Error).message}`);
+        }
+      }
+      if (!answerOk) {
+        onProgress?.('❌ 謎底生成多次失敗，放棄本次生成');
+        return {
+          answer: '',
+          questions: [{ question: '（生成失敗）', reply: '（生成失敗）', isCustom: false }],
+          review: null,
+          simulation: null,
+          retryCount: 0,
+        };
+      }
       onProgress?.(`🎲 AI 產生的謎底：${answer}`);
     } else if (!answer) {
       throw new Error('answerMode 為 human 時必須提供謎底');
