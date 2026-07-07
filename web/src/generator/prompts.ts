@@ -1,7 +1,16 @@
 export function designerSystemPrompt(
   numQuestions: number,
   questionBankText: string,
+  forcedQuestions: string[] = [],
 ): string {
+  const forcedBlock = forcedQuestions.length
+    ? `## 必須使用的題目（一定要全部包含，並根據謎底填入回答）\n${forcedQuestions
+        .map((q) => `- ${q}`)
+        .join('\n')}\n\n以上 ${forcedQuestions.length} 題必須全部出現在你選的 ${numQuestions} 題裡，其餘 ${Math.max(
+        0,
+        numQuestions - forcedQuestions.length,
+      )} 題再從候選題庫挑選。\n\n`
+    : '';
   return `你是一位經驗豐富的「靈媒遊戲」出題老師。請全程使用臺灣慣用詞彙（例如：印表機而非打印機、網路而非網絡、滑鼠而非鼠標）。
 
 你的任務是為給定的謎底，從題庫中選出最適合的${numQuestions}個問題，並根據謎底填入對應的回答。
@@ -26,7 +35,7 @@ export function designerSystemPrompt(
 8. **全中文**，不可出現英文或數字
 9. 問題和回答**結尾必須加句號**，讓玩家知道提示結束了
 
-## 題庫（從這裡選問題）
+${forcedBlock}## 題庫（從這裡選問題）
 
 ${questionBankText}
 
@@ -64,14 +73,31 @@ export function sampleRandom<T>(arr: readonly T[], n: number): T[] {
   return copy.slice(0, n);
 }
 
+export interface DesignerPromptOptions {
+  numQuestions?: number;      // M
+  numCandidates?: number;     // N
+  forcedQuestions?: string[]; // checked bank + custom
+}
+
 export function formatDesignerPrompt(
   answer: string,
-  numQuestions = 10,
+  opts: DesignerPromptOptions = {},
 ): { system: string; user: string } {
-  const sample = sampleRandom(QUESTION_BANK, Math.min(30, QUESTION_BANK.length));
-  const bankText = sample.map((q) => `- ${q}`).join('\n');
+  const numQuestions = opts.numQuestions ?? 10;
+  const numCandidates = opts.numCandidates ?? 30;
+  const forced = opts.forcedQuestions ?? [];
+
+  // Pool = forced questions (checked bank + custom) + random fill drawn from the
+  // remaining bank questions, up to numCandidates total.
+  const forcedInBank = forced.filter((q) => QUESTION_BANK.includes(q));
+  const remaining = QUESTION_BANK.filter((q) => !forcedInBank.includes(q));
+  const fillCount = Math.max(0, Math.min(numCandidates - forced.length, remaining.length));
+  const fill = sampleRandom(remaining, fillCount);
+  const pool = [...forced, ...fill];
+  const poolText = pool.map((q) => `- ${q}`).join('\n');
+
   return {
-    system: designerSystemPrompt(numQuestions, bankText),
+    system: designerSystemPrompt(numQuestions, poolText, forced),
     user: designerUserPrompt(answer, numQuestions),
   };
 }
