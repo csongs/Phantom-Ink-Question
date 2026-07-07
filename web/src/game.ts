@@ -180,14 +180,18 @@ export function buildFullShareText(game: PhantomInkGame): string {
   for (let i = 0; i < game.questions.length; i++) {
     const q = game.questions[i];
     const revealed = s.revealed[i];
-    if (revealed === 0) continue;
     const total = q.total;
-    const green = '🟩'.repeat(revealed);
-    const black = '⬛'.repeat(total - revealed);
     const oracleCount = (s.oracleCells[i] ?? []).length;
     const oracleMark = oracleCount > 0 ? ' 👁' : '';
-    lines.push(`${green}${black} Q${i + 1}：${q.question}`);
-    lines.push(`   回答：${q.reply} (${revealed}/${total})${oracleMark}`);
+    if (revealed === 0) {
+      lines.push(`Q${i + 1}：${q.question}`);
+      lines.push(`   回答：${q.reply} (🔒 ${oracleMark})`);
+    } else {
+      const green = '🟩'.repeat(revealed);
+      const black = '⬛'.repeat(total - revealed);
+      lines.push(`${green}${black} Q${i + 1}：${q.question}`);
+      lines.push(`   回答：${q.reply} (${revealed}/${total})${oracleMark}`);
+    }
   }
 
   let stars = 1;
