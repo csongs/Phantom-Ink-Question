@@ -93,6 +93,7 @@ class PhantomInkGenerator:
             ";": "；",
             "!": "！",
         })
+        qs.answer = convert(qs.answer, "zh-tw")
         for q in qs.questions:
             q.question = convert(q.question, "zh-tw").translate(punct_map)
             q.reply = convert(q.reply, "zh-tw").translate(punct_map)
@@ -313,7 +314,7 @@ class PhantomInkGenerator:
             temperature=0.9,
             max_tokens=20,
         )
-        return reply.strip()
+        return convert(reply.strip(), "zh-tw")
 
     # ── 局部修正 ──────────────────────────
 

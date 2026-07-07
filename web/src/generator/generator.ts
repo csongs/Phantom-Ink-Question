@@ -15,6 +15,7 @@ import {
   REVIEWER_SYSTEM_PROMPT,
   SIMULATOR_SYSTEM_PROMPT,
   answerGeneratorPrompt,
+  answerLocaleCheckPrompt,
   formatDesignerPrompt,
   reviewerUserPrompt,
   sampleRandom,
@@ -57,6 +58,7 @@ export class PhantomInkGenerator {
   }
 
   private postProcess(qs: QuestionSet): QuestionSet {
+    qs.answer = toTraditional(qs.answer);
     for (const q of qs.questions) {
       q.question = convertPunctuation(toTraditional(q.question));
       q.reply = convertPunctuation(toTraditional(q.reply));
@@ -256,7 +258,26 @@ export class PhantomInkGenerator {
       1024,
       (rawReply) => onProgress?.(`🔎 AI 原始回應（謎底）：${rawReply}`),
     );
-    return (raw.answer ?? '').trim();
+    return toTraditional((raw.answer ?? '').trim());
+  }
+
+  /** Re-checks a generated answer for Mainland-Chinese wording that character-level zhconv can't catch. */
+  async checkAnswerLocale(
+    answer: string,
+  ): Promise<{ isMainlandTerm: boolean; taiwanTerm: string; reason: string }> {
+    const raw = await this.jsonChat(
+      [
+        { role: 'system', content: '你只輸出 JSON。不加任何其他文字。' },
+        { role: 'user', content: answerLocaleCheckPrompt(answer) },
+      ],
+      0.3,
+      256,
+    );
+    return {
+      isMainlandTerm: raw.is_mainland_term ?? false,
+      taiwanTerm: raw.taiwan_term ?? '',
+      reason: raw.reason ?? '',
+    };
   }
 
   private async fixQuestions(
@@ -339,9 +360,22 @@ export class PhantomInkGenerator {
       // Unlike designQuestions below, this call previously had zero retry
       // safety net, so any such failure aborted generation entirely.
       let answerOk = false;
+      const rejectedAnswers: string[] = [];
       for (let i = 0; i < this.maxRetries && !answerOk; i++) {
         try {
-          answer = await this.generateAnswer(usedAnswers, onProgress);
+          const candidate = await this.generateAnswer([...usedAnswers, ...rejectedAnswers], onProgress);
+          onProgress?.(`🎲 AI 產生的謎底：${candidate}`);
+
+          const localeCheck = await this.checkAnswerLocale(candidate);
+          if (localeCheck.isMainlandTerm) {
+            onProgress?.(
+              `⚠️  「${candidate}」判斷為中國大陸用語（${localeCheck.reason}），重新產生...`,
+            );
+            rejectedAnswers.push(candidate);
+            continue;
+          }
+
+          answer = candidate;
           answerOk = true;
         } catch (err) {
           onProgress?.(`❌ 謎底生成失敗（第 ${i + 1}/${this.maxRetries} 次）：${(err as Error).message}`);
@@ -357,7 +391,6 @@ export class PhantomInkGenerator {
           retryCount: 0,
         };
       }
-      onProgress?.(`🎲 AI 產生的謎底：${answer}`);
     } else if (!answer) {
       throw new Error('answerMode 為 human 時必須提供謎底');
     }

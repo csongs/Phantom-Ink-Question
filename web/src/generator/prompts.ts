@@ -179,6 +179,26 @@ export function answerGeneratorPrompt(seed: string, usedHint: string): string {
 JSON 格式：{"answer": "..."}`;
 }
 
+export function answerLocaleCheckPrompt(answer: string): string {
+  return `請判斷「${answer}」是否為中國大陸慣用詞彙，而非臺灣慣用詞彙。
+
+## 判斷依據
+兩岸用詞習慣不同，即使字形已經是繁體字，用詞本身仍可能是大陸慣用語，例如：
+- 「鼠標」（臺灣：滑鼠）
+- 「視頻」（臺灣：影片）
+- 「打印機」（臺灣：印表機）
+- 「軟件」（臺灣：軟體）
+- 「土豆」（臺灣：馬鈴薯）
+- 「優盤」（臺灣：隨身碟）
+
+請只輸出以下 JSON 格式，不要有任何其他文字：
+{
+  "is_mainland_term": <true 或 false>,
+  "taiwan_term": "若為大陸用語，對應的臺灣慣用詞；否則為空字串",
+  "reason": "簡短說明判斷理由"
+}`;
+}
+
 export const ANSWER_SEEDS: readonly string[] = [
   '廚房', '戶外', '辦公室', '浴室', '學校', '醫院',
   '公園', '海邊', '山上', '車站', '森林', '沙漠',

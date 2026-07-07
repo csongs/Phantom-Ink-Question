@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatDesignerPrompt, QUESTION_BANK } from './prompts';
+import { answerLocaleCheckPrompt, formatDesignerPrompt, QUESTION_BANK } from './prompts';
 
 describe('formatDesignerPrompt', () => {
   it('builds a solvability-first designer prompt without difficulty-ramp rules', () => {
@@ -33,5 +33,14 @@ describe('formatDesignerPrompt', () => {
 
   it('has 112 entries in the question bank, matching the Python source', () => {
     expect(QUESTION_BANK.length).toBe(112);
+  });
+});
+
+describe('answerLocaleCheckPrompt', () => {
+  it('asks whether the given answer is Mainland-Chinese wording and includes it in the prompt', () => {
+    const prompt = answerLocaleCheckPrompt('鼠標');
+    expect(prompt).toContain('鼠標');
+    expect(prompt).toContain('中國大陸');
+    expect(prompt).toContain('is_mainland_term');
   });
 });

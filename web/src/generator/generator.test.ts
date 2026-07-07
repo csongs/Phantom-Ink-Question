@@ -30,6 +30,19 @@ describe('PhantomInkGenerator.designQuestions', () => {
     expect(qs.questions[1].reply).toBe('黑色或白色。');
   });
 
+  it('converts a simplified-Chinese answer to traditional during post-processing', async () => {
+    const simplifiedAnswerReply = JSON.stringify({
+      answer: '贝壳',
+      questions: [{ question: '它由什麼材料製成？', reply: '碳酸鈣.' }],
+    });
+    const backend = new FakeBackend([simplifiedAnswerReply]);
+    const generator = new PhantomInkGenerator(backend);
+
+    const qs = await generator.designQuestions('贝壳', 1);
+
+    expect(qs.answer).toBe('貝殼');
+  });
+
   it('marks questions not present in QUESTION_BANK as custom', async () => {
     const madeUpQuestion = JSON.stringify({
       answer: '鋼琴',
@@ -94,6 +107,28 @@ describe('PhantomInkGenerator.generateAnswer', () => {
     await generator.generateAnswer([], (msg) => messages.push(msg));
 
     expect(messages.some((m) => m.includes(rawReply))).toBe(true);
+  });
+
+  it('converts a simplified-Chinese answer to traditional', async () => {
+    const backend = new FakeBackend([JSON.stringify({ answer: '贝壳' })]);
+    const generator = new PhantomInkGenerator(backend);
+
+    const answer = await generator.generateAnswer();
+
+    expect(answer).toBe('貝殼');
+  });
+});
+
+describe('PhantomInkGenerator.checkAnswerLocale', () => {
+  it('parses is_mainland_term/taiwan_term/reason from the reply', async () => {
+    const backend = new FakeBackend([
+      JSON.stringify({ is_mainland_term: true, taiwan_term: '滑鼠', reason: '大陸慣用語' }),
+    ]);
+    const generator = new PhantomInkGenerator(backend);
+
+    const result = await generator.checkAnswerLocale('鼠標');
+
+    expect(result).toEqual({ isMainlandTerm: true, taiwanTerm: '滑鼠', reason: '大陸慣用語' });
   });
 });
 
@@ -189,6 +224,7 @@ describe('PhantomInkGenerator.generate', () => {
     const backend = new FakeBackend([
       'not valid json',
       JSON.stringify({ answer: '鋼琴' }),
+      JSON.stringify({ is_mainland_term: false }),
       GOOD_DESIGN_REPLY,
       PASSING_REVIEW_REPLY,
     ]);
@@ -207,6 +243,47 @@ describe('PhantomInkGenerator.generate', () => {
 
   it('returns the failure placeholder if generateAnswer exhausts every retry', async () => {
     const backend = new FakeBackend(['not json', 'still not json']);
+    const generator = new PhantomInkGenerator(backend, 2);
+
+    const result = await generator.generate({ answerMode: 'ai', numQuestions: 2 });
+
+    expect(result.questions).toEqual([
+      { question: '（生成失敗）', reply: '（生成失敗）', isCustom: false },
+    ]);
+  });
+
+  it('rejects an answer flagged as Mainland-Chinese wording and regenerates', async () => {
+    const backend = new FakeBackend([
+      JSON.stringify({ answer: '鼠标' }),
+      JSON.stringify({ is_mainland_term: true, taiwan_term: '滑鼠', reason: '大陸慣用語' }),
+      JSON.stringify({ answer: '滑鼠' }),
+      JSON.stringify({ is_mainland_term: false }),
+      GOOD_DESIGN_REPLY,
+      PASSING_REVIEW_REPLY,
+    ]);
+    const generator = new PhantomInkGenerator(backend, 3);
+
+    const result = await generator.generate({
+      answerMode: 'ai',
+      numQuestions: 2,
+      skipReview: false,
+      skipSimulation: true,
+    });
+
+    expect(result.answer).toBe('鋼琴');
+    // Second generateAnswer call's usedHint must mention the rejected candidate
+    // (generateAnswer converts it to traditional Chinese before returning).
+    const secondAnswerCall = backend.calls[2];
+    expect(secondAnswerCall.messages.some((m) => m.content.includes('鼠標'))).toBe(true);
+  });
+
+  it('gives up and returns the failure placeholder if every answer is flagged as Mainland wording', async () => {
+    const backend = new FakeBackend([
+      JSON.stringify({ answer: '鼠标' }),
+      JSON.stringify({ is_mainland_term: true, taiwan_term: '滑鼠', reason: '大陸慣用語' }),
+      JSON.stringify({ answer: '视频' }),
+      JSON.stringify({ is_mainland_term: true, taiwan_term: '影片', reason: '大陸慣用語' }),
+    ]);
     const generator = new PhantomInkGenerator(backend, 2);
 
     const result = await generator.generate({ answerMode: 'ai', numQuestions: 2 });
