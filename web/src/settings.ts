@@ -3,6 +3,8 @@ export interface Settings {
   backend: 'groq' | 'hf';
   apiKey: string;
   model: string;
+  answerMode?: 'ai' | 'human';
+  humanAnswer?: string;
 }
 
 const STORAGE_KEY = 'phantom-ink-settings';

@@ -1,5 +1,6 @@
 export interface GameQuestion {
   question: string;
+  reply: string;
   cells: string[];
   total: number;
 }
@@ -96,6 +97,11 @@ export class PhantomInkGame {
     this.state.answerBoxOpen = false;
   }
 
+  giveUp(): void {
+    this.state.gameOver = true;
+    this.state.won = false;
+  }
+
   submitAnswer(value: string): boolean {
     const s = this.state;
     const val = value.trim();
@@ -120,13 +126,154 @@ export function escapeHtml(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
+function flashCopied(container: HTMLElement): void {
+  const el = document.createElement('div');
+  el.className = 'pi-flash';
+  el.textContent = '✅ 已複製！';
+  container.appendChild(el);
+  setTimeout(() => el.remove(), 1400);
+}
+
 /**
- * Renders the current game state into `container` and wires up button
- * handlers. Ported from `game.py`'s `GAME_HTML_TEMPLATE` render() function
- * (game.py lines 411-567) — same markup and CSS classes, driven directly by
- * `game.state` instead of a Python-injected JSON blob.
+ * Build a Wordle-style share text with colored squares per question.
+ * No actual answer text — safe to share.
  */
-export function renderGame(container: HTMLElement, game: PhantomInkGame): void {
+export function buildShareText(game: PhantomInkGame): string {
+  const s = game.state;
+  const lines: string[] = [];
+  lines.push('靈媒遊戲 Phantom Ink');
+
+  for (let i = 0; i < game.questions.length; i++) {
+    const revealed = s.revealed[i];
+    const total = game.questions[i].total;
+    if (revealed === 0) continue;
+    const green = '🟩'.repeat(revealed);
+    const black = '⬛'.repeat(total - revealed);
+    const oracleCount = (s.oracleCells[i] ?? []).length;
+    const oracleMark = oracleCount > 0 ? ' 👁' : '';
+    lines.push(`${green}${black} Q${i + 1}${oracleMark}`);
+  }
+
+  let stars = 1;
+  if (s.ink <= 8 && s.guesses <= 1) stars = 5;
+  else if (s.ink <= 14 && s.guesses <= 2) stars = 4;
+  else if (s.ink <= 20) stars = 3;
+  else stars = 2;
+  const starStr = '★'.repeat(stars) + '☆'.repeat(5 - stars);
+
+  lines.push('');
+  lines.push(`🖋 ${s.ink}  🎯 ${s.guesses}${s.oracleUsed > 0 ? `  👁 ${s.oracleUsed}` : ''}  ${starStr}`);
+
+  return lines.join('\n');
+}
+
+/**
+ * Build a full share text with answer, questions, and replies.
+ */
+export function buildFullShareText(game: PhantomInkGame): string {
+  const s = game.state;
+  const lines: string[] = [];
+  lines.push('靈媒遊戲 Phantom Ink');
+  lines.push(`謎底：${game.answer}`);
+  lines.push('');
+
+  for (let i = 0; i < game.questions.length; i++) {
+    const q = game.questions[i];
+    const revealed = s.revealed[i];
+    if (revealed === 0) continue;
+    const total = q.total;
+    const green = '🟩'.repeat(revealed);
+    const black = '⬛'.repeat(total - revealed);
+    const oracleCount = (s.oracleCells[i] ?? []).length;
+    const oracleMark = oracleCount > 0 ? ' 👁' : '';
+    lines.push(`${green}${black} Q${i + 1}：${q.question}`);
+    lines.push(`   回答：${q.reply} (${revealed}/${total})${oracleMark}`);
+  }
+
+  let stars = 1;
+  if (s.ink <= 8 && s.guesses <= 1) stars = 5;
+  else if (s.ink <= 14 && s.guesses <= 2) stars = 4;
+  else if (s.ink <= 20) stars = 3;
+  else stars = 2;
+  const starStr = '★'.repeat(stars) + '☆'.repeat(5 - stars);
+
+  lines.push('');
+  lines.push(`🖋 ${s.ink}  🎯 ${s.guesses}${s.oracleUsed > 0 ? `  👁 ${s.oracleUsed}` : ''}  ${starStr}`);
+
+  return lines.join('\n');
+}
+
+// ── Share preview modal ──────────────────
+
+export function renderSharePreview(root: HTMLElement, text: string): void {
+  const overlay = document.createElement('div');
+  overlay.className = 'pi-overlay open';
+  overlay.innerHTML = `
+    <div class="pi-dialog pi-share-dialog">
+      <div class="pi-dialog-title">📋 預覽分享內容</div>
+      <pre class="pi-share-preview">${escapeHtml(text)}</pre>
+      <div class="pi-share-actions">
+        <button class="pi-btn pi-btn-green" id="pi-share-copy">📋 複製</button>
+        <button class="pi-btn pi-btn-next" id="pi-share-close">關閉</button>
+      </div>
+    </div>
+  `;
+  root.appendChild(overlay);
+
+  overlay.querySelector('#pi-share-copy')?.addEventListener('click', () => {
+    navigator.clipboard.writeText(text).catch(() => {});
+    flashCopied(overlay);
+  });
+  overlay.querySelector('#pi-share-close')?.addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+}
+
+const RULES_MODAL_HTML = `
+<div class="pi-dialog pi-rules-dialog">
+  <div class="pi-dialog-title">📖 遊戲說明</div>
+  <div class="pi-rules-body">
+    <strong>靈媒遊戲 Phantom Ink — 遊戲說明</strong><br><br>
+    <strong>🎯 目標</strong><br>
+    猜出謎底（一個詞語或事物）。<br><br>
+    <strong>🖋 顯示墨水</strong><br>
+    每按一次會顯示當前題目回答中的一個注音符號。<br>
+    每顯示一格消耗 1 點墨水。<br><br>
+    <strong>🎯 提交謎底</strong><br>
+    隨時可以輸入答案猜測。猜錯 +3 墨水，不限次數。<br><br>
+    <strong>➡ 下一題</strong><br>
+    揭露部分線索後可跳到下一題。<br>
+    跳過後無法再回頭顯示該題的墨水。<br><br>
+    <strong>👁 老天有眼</strong><br>
+    第 5 題開始獲得一次。<br>
+    全部線索揭露完後可再獲得一次。<br>
+    可選擇任意一題多揭露一格。<br><br>
+    <strong>📜 完成線索</strong><br>
+    最後一題揭露完後可「完成線索」。<br>
+    之後不能再顯示墨水，但可提交謎底或使用老天有眼。<br><br>
+    <strong>🏳️ 放棄／公布答案</strong><br>
+    直接結束遊戲並公布謎底。<br><br>
+    <strong>⭐ 評價</strong><br>
+    根據墨水用量和猜測次數給予 1-5 星評價。
+  </div>
+  <button class="pi-dialog-close pi-rules-close">關閉</button>
+</div>`;
+
+export function showGameRules(root: HTMLElement): void {
+  const overlay = document.createElement('div');
+  overlay.className = 'pi-overlay open';
+  overlay.innerHTML = RULES_MODAL_HTML;
+  root.appendChild(overlay);
+  overlay.querySelector('.pi-rules-close')?.addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+}
+
+// ── Game render ──────────────────────────
+
+export function renderGame(
+  container: HTMLElement,
+  game: PhantomInkGame,
+  root?: HTMLElement,
+): void {
   const s = game.state;
   const cur = s.currentQ;
   const q = game.questions[cur];
@@ -200,6 +347,9 @@ export function renderGame(container: HTMLElement, game: PhantomInkGame): void {
     }
     html += `<button class="pi-btn pi-btn-answer" data-action="show-answer">🎯 提交謎底</button>
       <button class="pi-btn pi-btn-oracle" data-action="open-oracle" ${oracleDisabled}>👁 老天有眼</button>
+    </div>
+    <div class="pi-btns-row">
+      <button class="pi-btn pi-btn-finish" data-action="give-up">🏳️ 放棄／公布答案</button>
     </div></div>`;
   }
 
@@ -251,39 +401,69 @@ export function renderGame(container: HTMLElement, game: PhantomInkGame): void {
       <div class="pi-result-stars">${starStr}</div>
       <div class="pi-result-answer">謎底：<strong>${escapeHtml(game.answer)}</strong></div>
       <button class="pi-restart" data-action="restart">再來一題</button>
+      <div class="pi-share-row">
+        <button class="pi-btn pi-btn-share" data-action="share-blind">📋 不暴雷</button>
+        <button class="pi-btn pi-btn-share" data-action="share-full">📋 含解答</button>
+      </div>
     </div>`;
+  }
+
+  // Help button (always visible during game)
+  if (!s.gameOver) {
+    html += `<div class="pi-help-bar"><button class="pi-btn-help" data-action="show-help">📖 規則</button></div>`;
   }
 
   container.innerHTML = html;
 
   container.querySelector('[data-action="reveal-ink"]')?.addEventListener('click', () => {
     game.revealInk();
-    renderGame(container, game);
+    renderGame(container, game, root);
   });
   container.querySelector('[data-action="next-question"]')?.addEventListener('click', () => {
     game.nextQuestion();
-    renderGame(container, game);
+    renderGame(container, game, root);
   });
   container.querySelector('[data-action="finish-clues"]')?.addEventListener('click', () => {
     game.finishClues();
-    renderGame(container, game);
+    renderGame(container, game, root);
   });
   container.querySelector('[data-action="show-answer"]')?.addEventListener('click', () => {
     game.showAnswerInput();
-    renderGame(container, game);
+    renderGame(container, game, root);
   });
   container.querySelector('[data-action="hide-answer"]')?.addEventListener('click', () => {
     game.hideAnswerInput();
-    renderGame(container, game);
+    renderGame(container, game, root);
   });
   container.querySelector('[data-action="submit-answer"]')?.addEventListener('click', () => {
     const input = container.querySelector<HTMLInputElement>('#pi-input');
     if (!input) return;
     game.submitAnswer(input.value);
-    renderGame(container, game);
+    renderGame(container, game, root);
   });
   container.querySelector('[data-action="restart"]')?.addEventListener('click', () => {
     window.location.reload();
+  });
+
+  container.querySelector('[data-action="share-blind"]')?.addEventListener('click', () => {
+    const text = buildShareText(game);
+    if (root) renderSharePreview(root, text);
+    else { navigator.clipboard.writeText(text).catch(() => {}); flashCopied(container); }
+  });
+
+  container.querySelector('[data-action="share-full"]')?.addEventListener('click', () => {
+    const text = buildFullShareText(game);
+    if (root) renderSharePreview(root, text);
+    else { navigator.clipboard.writeText(text).catch(() => {}); flashCopied(container); }
+  });
+
+  container.querySelector('[data-action="give-up"]')?.addEventListener('click', () => {
+    game.giveUp();
+    renderGame(container, game, root);
+  });
+
+  container.querySelector('[data-action="show-help"]')?.addEventListener('click', () => {
+    if (root) showGameRules(root);
   });
 
   if (s.answerBoxOpen) {
@@ -328,7 +508,7 @@ export function renderGame(container: HTMLElement, game: PhantomInkGame): void {
         const idx = Number(btn.dataset.idx);
         game.revealOracle(idx);
         overlay.remove();
-        renderGame(container, game);
+        renderGame(container, game, root);
       });
     });
     overlay.querySelector('.pi-dialog-close')?.addEventListener('click', () => {

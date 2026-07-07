@@ -12,46 +12,47 @@ body {
 #app {
   --pi-bg: #121213;
   --pi-surface: #1e1f20;
+  --pi-card-bg: #252628;
   --pi-border: #3a3a3c;
   --pi-border-soft: rgba(255,255,255,0.07);
   --pi-text: #ffffff;
   --pi-text-dim: #8a8a8c;
   --pi-text-faint: #5f5f61;
   --pi-green: #538d4e;
-  --pi-green-bright: #6aaa64;
+  --pi-green-bright: #22C55E;
   --pi-yellow: #b59f3b;
   --pi-yellow-bright: #c9b458;
   --pi-key: #565758;
   --pi-key-dark: #3a3a3c;
   --pi-danger: #d24040;
   font-family: 'Noto Sans TC', 'Segoe UI', system-ui, -apple-system, sans-serif;
-  max-width: 500px; margin: 0 auto; padding: 22px 18px 26px;
+  width: min(40vw, 600px); margin: 0 auto; padding: 24px 24px 28px;
   color: var(--pi-text); background: var(--pi-bg);
-  border: 1px solid var(--pi-border-soft); border-radius: 12px;
-  user-select: none; font-variant-numeric: tabular-nums;
+  border: 1px solid var(--pi-border-soft); border-radius: 14px;
+  font-variant-numeric: tabular-nums;
 }
 #app * { box-sizing: border-box; margin: 0; padding: 0; }
 
 /* Header */
-.pi-header { text-align: center; font-size: 30px; font-weight: 800; color: var(--pi-text); letter-spacing: 8px; padding: 4px 0 16px; margin-bottom: 16px; border-bottom: 1px solid var(--pi-border); }
+.pi-header { text-align: center; font-size: 32px; font-weight: 800; color: var(--pi-text); letter-spacing: 8px; padding: 6px 0 18px; margin-bottom: 18px; border-bottom: 1px solid var(--pi-border); position: relative; }
+.pi-header::after { content: ''; position: absolute; bottom: -1px; left: 20%; right: 20%; height: 1px; background: linear-gradient(90deg, transparent, var(--pi-green-bright), transparent); opacity: 0.4; }
 .pi-header small { display: block; font-size: 10px; font-weight: 600; color: var(--pi-text-dim); letter-spacing: 3px; margin-top: 6px; text-transform: uppercase; }
 
 /* Stats */
-.pi-stats { display: flex; justify-content: center; margin-bottom: 18px; }
-.pi-stat { display: flex; flex-direction: column; align-items: center; padding: 0 18px; position: relative; }
-.pi-stat:not(:first-child)::before { content: ''; position: absolute; left: 0; top: 2px; bottom: 2px; width: 1px; background: var(--pi-border); }
-.pi-stat-icon { font-size: 13px; margin-bottom: 2px; opacity: 0.85; }
-.pi-stat-val { font-size: 24px; font-weight: 700; color: var(--pi-text); line-height: 1.1; }
+.pi-stats { display: flex; justify-content: center; gap: 4px; margin-bottom: 22px; }
+.pi-stat { display: flex; flex-direction: column; align-items: center; padding: 10px 20px; position: relative; background: var(--pi-surface); border-radius: 10px; min-width: 72px; }
+.pi-stat-icon { font-size: 14px; margin-bottom: 3px; opacity: 0.9; }
+.pi-stat-val { font-size: 26px; font-weight: 700; color: var(--pi-text); line-height: 1.2; }
 .pi-stat-lbl { font-size: 10px; color: var(--pi-text-dim); letter-spacing: 1px; margin-top: 2px; }
 
 /* Question card */
-.pi-q-card { background: var(--pi-surface); border-radius: 8px; padding: 18px; margin-bottom: 14px; border: 1px solid var(--pi-border-soft); }
-.pi-q-num { font-size: 11px; color: var(--pi-text-dim); letter-spacing: 1px; margin-bottom: 8px; font-weight: 700; }
-.pi-q-text { font-size: 16px; font-weight: 600; line-height: 1.6; margin-bottom: 16px; color: var(--pi-text); }
+.pi-q-card { background: var(--pi-card-bg); border-radius: 14px; padding: 24px 22px 22px; margin-bottom: 18px; border: 1px solid var(--pi-border-soft); box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+.pi-q-num { font-size: 11px; color: var(--pi-text-dim); letter-spacing: 1px; margin-bottom: 10px; font-weight: 700; }
+.pi-q-text { font-size: 18px; font-weight: 600; line-height: 1.7; margin-bottom: 20px; color: var(--pi-text); }
 
 /* Wordle-style tiles */
-.pi-tiles { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; min-height: 48px; padding: 4px 0; }
-.pi-tile { --tile-fg: var(--pi-green); width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; font-size: 19px; font-weight: 700; border-radius: 3px; border: 2px solid var(--pi-border); background: transparent; color: transparent; }
+.pi-tiles { display: flex; gap: 7px; flex-wrap: wrap; justify-content: center; min-height: 52px; padding: 6px 0; }
+.pi-tile { --tile-fg: var(--pi-green); width: 50px; height: 50px; display: flex; align-items: center; justify-content: center; font-size: 21px; font-weight: 700; border-radius: 4px; border: 2px solid var(--pi-border); background: transparent; color: transparent; }
 .pi-tile.revealed { border-color: var(--tile-fg); background: var(--tile-fg); color: #fff; animation: tileFlip 0.45s ease; }
 .pi-tile.revealed.oracle { --tile-fg: var(--pi-yellow); }
 @keyframes tileFlip {
@@ -72,15 +73,15 @@ body {
 .pi-clue-body.open { display: block; }
 .pi-clue-q { font-size: 13px; margin-bottom: 8px; color: var(--pi-text); }
 .pi-clue-tiles { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
-.pi-clue-tile { --tile-fg: var(--pi-green); width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; border-radius: 3px; border: 2px solid var(--tile-fg); background: var(--tile-fg); color: #fff; }
+.pi-clue-tile { --tile-fg: var(--pi-green); width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; border-radius: 3px; border: 2px solid var(--tile-fg); background: var(--tile-fg); color: #fff; }
 .pi-clue-tile.oracle { --tile-fg: var(--pi-yellow); }
 .pi-clue-ink-cnt { font-size: 11px; color: var(--pi-text-faint); margin-top: 6px; }
 
 /* Buttons — Wordle keyboard style */
-.pi-btns { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
-.pi-btns-row { display: flex; gap: 8px; }
+.pi-btns { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+.pi-btns-row { display: flex; gap: 10px; }
 .pi-btns-row .pi-btn { flex: 1; }
-.pi-btn { height: 44px; border: none; border-radius: 6px; font-size: 13px; font-weight: 700; letter-spacing: 0.5px; cursor: pointer; background: var(--pi-key); color: #fff; display: flex; align-items: center; justify-content: center; gap: 6px; transition: filter 0.15s, transform 0.1s; white-space: nowrap; }
+.pi-btn { height: 48px; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; letter-spacing: 0.5px; cursor: pointer; background: var(--pi-key); color: #fff; display: flex; align-items: center; justify-content: center; gap: 6px; transition: filter 0.15s, transform 0.1s; white-space: nowrap; padding: 0 10px; }
 .pi-btn:disabled { opacity: 0.3; cursor: default; transform: none !important; }
 .pi-btn:hover:not(:disabled) { filter: brightness(1.15); }
 .pi-btn:active:not(:disabled) { transform: scale(0.96); }
@@ -90,13 +91,13 @@ body {
 .pi-btn-oracle { background: var(--pi-yellow); color: #1a1a1b; }
 
 /* Answer input */
-.pi-answer-box { background: var(--pi-surface); border-radius: 8px; padding: 16px; margin-bottom: 14px; display: none; border: 1px solid var(--pi-border-soft); }
+.pi-answer-box { background: var(--pi-surface); border-radius: 10px; padding: 18px; margin-bottom: 16px; display: none; border: 1px solid var(--pi-border-soft); }
 .pi-answer-box.open { display: block; }
-.pi-answer-box input { width: 100%; padding: 12px 14px; border: 2px solid var(--pi-border); border-radius: 6px; font-size: 18px; font-weight: 700; background: var(--pi-bg); color: var(--pi-text); outline: none; margin-bottom: 10px; text-align: center; letter-spacing: 4px; transition: border-color 0.2s; }
+.pi-answer-box input { width: 100%; padding: 14px 16px; border: 2px solid var(--pi-border); border-radius: 8px; font-size: 20px; font-weight: 700; background: var(--pi-bg); color: var(--pi-text); outline: none; margin-bottom: 12px; text-align: center; letter-spacing: 4px; transition: border-color 0.2s; }
 .pi-answer-box input:focus { border-color: var(--pi-green-bright); }
 .pi-answer-box input.shake { border-color: var(--pi-danger); animation: shake 0.4s ease; }
 @keyframes shake { 20%,60% { transform: translateX(-6px); } 40%,80% { transform: translateX(6px); } 100% { transform: translateX(0); } }
-.pi-answer-actions { display: flex; gap: 8px; }
+.pi-answer-actions { display: flex; gap: 10px; }
 .pi-answer-actions .pi-btn { flex: 1; }
 
 /* Oracle overlay */
@@ -132,15 +133,27 @@ body {
 .pi-restart { display: block; width: 100%; padding: 14px; border: none; border-radius: 6px; font-size: 15px; font-weight: 700; letter-spacing: 1px; background: var(--pi-green); color: #fff; cursor: pointer; transition: filter 0.2s; }
 .pi-restart:hover { filter: brightness(1.15); }
 
+.pi-btn-share { display: block; flex: 1; padding: 12px; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; letter-spacing: 0.5px; background: var(--pi-key-dark); color: var(--pi-text-dim); cursor: pointer; transition: background 0.2s, color 0.2s; }
+.pi-btn-share:hover { background: var(--pi-key); color: var(--pi-text); }
+
+.pi-share-row { display: flex; gap: 8px; margin-top: 8px; }
+
 /* Progress bar */
 .pi-progress { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 11px; color: var(--pi-text-dim); }
 .pi-progress-bar { flex: 1; height: 4px; background: var(--pi-surface); border-radius: 2px; overflow: hidden; }
 .pi-progress-fill { height: 100%; background: var(--pi-green-bright); border-radius: 2px; transition: width 0.4s ease; }
 
 /* Responsive */
-@media (max-width: 380px) {
-  .pi-tile { width: 38px; height: 38px; font-size: 16px; }
-  .pi-header { font-size: 24px; letter-spacing: 5px; }
+@media (max-width: 440px) {
+  #app { padding: 18px 14px 22px; }
+  .pi-header { font-size: 26px; letter-spacing: 5px; padding: 4px 0 14px; }
+  .pi-stat { padding: 8px 12px; min-width: 60px; }
+  .pi-stat-val { font-size: 22px; }
+  .pi-q-card { padding: 18px 16px; }
+  .pi-q-text { font-size: 16px; }
+  .pi-tile { width: 42px; height: 42px; font-size: 18px; }
+  .pi-btn { height: 44px; font-size: 12px; }
+  .pi-btns, .pi-btns-row { gap: 6px; }
 }
 
 /* Settings, Loading, Error screens */
@@ -149,7 +162,7 @@ body {
 .pi-error {
   max-width: 500px;
   margin: 0 auto;
-  padding: 22px 18px 26px;
+  padding: 32px 24px 36px;
   color: var(--pi-text);
   background: var(--pi-bg);
   border: 1px solid var(--pi-border-soft);
@@ -165,14 +178,14 @@ body {
 }
 
 .pi-settings h2 {
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 800;
-  margin-bottom: 18px;
+  margin-bottom: 24px;
   text-align: center;
 }
 
 .pi-settings-group {
-  margin-bottom: 16px;
+  margin-bottom: 20px;
 }
 
 .pi-settings-group label {
@@ -211,40 +224,64 @@ body {
   flex: 1;
 }
 
+/* Loading — GPT thinking style */
 .pi-loading {
   display: none;
   text-align: center;
+  padding: 48px 24px;
 }
 
 .pi-loading.open {
   display: block;
 }
 
-.pi-loading h2 {
-  font-size: 20px;
-  font-weight: 700;
-  margin-bottom: 16px;
+.pi-think {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
 }
 
-.pi-loading-spinner {
-  display: inline-block;
-  width: 40px;
-  height: 40px;
-  border: 3px solid var(--pi-border);
-  border-top-color: var(--pi-green-bright);
+.pi-think-indicator {
+  display: flex;
+  gap: 6px;
+}
+
+.pi-think-dot {
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-  margin: 16px 0;
+  background: var(--pi-green-bright);
+  animation: thinkBounce 1.2s ease-in-out infinite;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
+.pi-think-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.pi-think-dot:nth-child(3) {
+  animation-delay: 0.4s;
 }
 
-.pi-loading p {
-  font-size: 13px;
+@keyframes thinkBounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.3; }
+  30% { transform: translateY(-10px); opacity: 1; }
+}
+
+.pi-think-label {
+  font-size: 15px;
+  font-weight: 600;
   color: var(--pi-text-dim);
-  margin-top: 12px;
+  letter-spacing: 2px;
+}
+
+.pi-think-status {
+  font-size: 12px;
+  color: var(--pi-text-faint);
+  line-height: 1.5;
+  max-width: 80%;
+  margin: 0 auto;
+  font-family: 'Consolas', 'Courier New', monospace;
 }
 
 .pi-error {
@@ -272,4 +309,221 @@ body {
 
 .pi-error .pi-btn {
   width: 100%;
+  margin-bottom: 8px;
+}
+
+.pi-error-msg {
+  background: var(--pi-surface);
+  border: 1px solid var(--pi-border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  font-size: 12px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  color: var(--pi-text-dim);
+  text-align: left;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.pi-log {
+  margin-top: 16px;
+  max-height: 280px;
+  overflow-y: auto;
+  text-align: left;
+  background: var(--pi-surface);
+  border: 1px solid var(--pi-border-soft);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.pi-log-line {
+  font-size: 12px;
+  color: var(--pi-text-dim);
+  line-height: 1.7;
+  font-family: 'Consolas', 'Courier New', monospace;
+}
+
+.pi-log-line:not(:last-child) {
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+}
+
+/* Generation log below game / error screen */
+.pi-log-below {
+  margin-top: 16px;
+  border-top: 1px solid var(--pi-border-soft);
+  padding-top: 8px;
+}
+
+.pi-log-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pi-text-dim);
+  letter-spacing: 0.5px;
+  user-select: none;
+}
+
+.pi-log-toggle:hover {
+  color: var(--pi-text);
+}
+
+.pi-log-toggle-arrow {
+  font-size: 10px;
+  transition: transform 0.2s;
+}
+
+.pi-log-toggle-arrow.open {
+  transform: rotate(90deg);
+}
+
+.pi-log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.pi-log-copy {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--pi-text-faint);
+  padding: 4px 6px;
+  border-radius: 4px;
+  transition: background 0.15s, color 0.15s;
+  line-height: 1;
+}
+
+.pi-log-copy:hover {
+  background: var(--pi-surface);
+  color: var(--pi-text);
+}
+
+.pi-log-body {
+  max-height: 320px;
+  overflow-y: auto;
+  text-align: left;
+  background: var(--pi-surface);
+  border: 1px solid var(--pi-border-soft);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.pi-log-body:not(.open) {
+  display: none;
+}
+
+/* Radio buttons in settings */
+.pi-radio {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 4px;
+  border: 1px solid var(--pi-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.pi-radio:hover {
+  border-color: var(--pi-green-bright);
+}
+
+.pi-radio input[type="radio"] {
+  width: auto !important;
+  margin: 0;
+}
+
+.pi-settings-sub {
+  margin-top: 8px;
+  padding-left: 24px;
+}
+
+/* Rules dialog */
+.pi-rules-dialog {
+  max-width: 380px !important;
+  max-height: 80vh;
+}
+
+.pi-rules-body {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--pi-text-dim);
+  max-height: 55vh;
+  overflow-y: auto;
+  padding: 0 2px;
+  margin-bottom: 12px;
+}
+
+.pi-rules-body strong {
+  color: var(--pi-text);
+}
+
+/* Share preview */
+.pi-share-dialog {
+  max-width: 400px !important;
+}
+
+.pi-share-preview {
+  background: var(--pi-bg);
+  border: 1px solid var(--pi-border);
+  border-radius: 6px;
+  padding: 12px;
+  font-size: 12px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  color: var(--pi-text-dim);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 50vh;
+  overflow-y: auto;
+  margin-bottom: 12px;
+  user-select: text;
+}
+
+.pi-share-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.pi-share-actions .pi-btn {
+  flex: 1;
+}
+
+.pi-btn-green {
+  background: var(--pi-green) !important;
+  color: #fff !important;
+}
+
+/* Help button during game */
+.pi-help-bar {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0 4px;
+}
+
+.pi-btn-help {
+  background: none;
+  border: 1px solid var(--pi-border);
+  border-radius: 6px;
+  color: var(--pi-text-faint);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 6px 14px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.pi-btn-help:hover {
+  background: var(--pi-surface);
+  color: var(--pi-text-dim);
+  border-color: var(--pi-border-soft);
 }

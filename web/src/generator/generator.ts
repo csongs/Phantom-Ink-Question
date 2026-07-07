@@ -22,6 +22,8 @@ import {
 import { convertPunctuation, toTraditional } from '../zhconv';
 import { countBopomofoCells, toBopomofoCells } from '../bopomofo';
 
+export type ProgressCallback = (msg: string) => void;
+
 export interface GenerateOptions {
   answer?: string;
   skipReview?: boolean;
@@ -29,6 +31,7 @@ export interface GenerateOptions {
   answerMode?: 'ai' | 'human';
   numQuestions?: number;
   usedAnswers?: string[];
+  onProgress?: ProgressCallback;
 }
 
 export class PhantomInkGenerator {
@@ -298,11 +301,14 @@ export class PhantomInkGenerator {
       answerMode = 'ai',
       numQuestions = 10,
       usedAnswers = [],
+      onProgress,
     } = options;
     let answer = options.answer ?? '';
 
     if (answerMode === 'ai') {
+      onProgress?.('🎲 AI 思考謎底中...');
       answer = await this.generateAnswer(usedAnswers);
+      onProgress?.(`🎲 AI 產生的謎底：${answer}`);
     } else if (!answer) {
       throw new Error('answerMode 為 human 時必須提供謎底');
     }
@@ -310,10 +316,14 @@ export class PhantomInkGenerator {
     let retryCount = 0;
 
     for (let attempt = 0; attempt < this.maxRetries; attempt++) {
+      onProgress?.(`📝 第 ${attempt + 1} 次生成（共 ${this.maxRetries} 次）`);
+
       let questionSet: QuestionSet;
       try {
+        onProgress?.('🤖 AI 出題中...');
         questionSet = await this.designQuestions(answer, answerMode, numQuestions);
       } catch {
+        onProgress?.('❌ 出題失敗，重試中...');
         continue;
       }
 
@@ -343,15 +353,28 @@ export class PhantomInkGenerator {
           if (r.trim() && replies.filter((x) => x === r).length > 1) reasonsDict[i].push('回答重複');
           if ([...answer].some((c) => r.includes(c))) reasonsDict[i].push('洩漏謎底文字');
         }
+        onProgress?.(`⚠️  發現 ${bad.size} 題不合格（${sortedBad.map(i => `Q${i + 1}`).join('、')}），只重新產生這 ${bad.size} 題...`);
 
         questionSet = await this.fixQuestions(answer, questionSet, sortedBad, reasonsDict);
       }
 
+      // Log the final (post-fix) questions
+      const qaLines = questionSet.questions
+        .map((q, i) => `  Q${i + 1}. ${q.question}\n  A${i + 1}. ${q.reply}`)
+        .join('\n');
+      onProgress?.(`✅ 出題完成（${questionSet.questions.length} 題）\n${qaLines}`);
+
       let review: ReviewResult | null = null;
       if (!skipReview) {
+        onProgress?.('🔍 AI 驗題中...');
         try {
           review = await this.reviewQuestions(questionSet);
+          const commentsStr = review.comments.length
+            ? '\n' + review.comments.map((c) => `  • ${c}`).join('\n')
+            : '';
+          onProgress?.(`🔍 評分：${review.score}/100 — ${review.passed ? '✅ 通過' : '❌ 未通過'}${commentsStr}`);
         } catch {
+          onProgress?.('❌ 驗題失敗，重試中...');
           continue;
         }
         if (!review.passed) {
@@ -362,13 +385,19 @@ export class PhantomInkGenerator {
 
       let simulation: SimulationResult | null = null;
       if (!skipSimulation) {
+        onProgress?.('🎮 AI 模擬玩家中...');
         try {
           simulation = await this.simulatePlayer(questionSet);
+          onProgress?.(
+            `🎮 在第 ${simulation.guessRound} 題猜出（${simulation.inkUsed} 格注音，信心 ${simulation.confidence}）`,
+          );
         } catch {
+          onProgress?.('⚠️  模擬失敗（跳過）');
           simulation = null;
         }
       }
 
+      onProgress?.('✅ 題組生成成功！');
       return {
         answer: questionSet.answer,
         questions: questionSet.questions,

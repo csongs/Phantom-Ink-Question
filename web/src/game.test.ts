@@ -3,11 +3,11 @@ import { PhantomInkGame, type GameQuestion } from './game';
 
 function makeQuestions(): GameQuestion[] {
   return [
-    { question: 'Q1', cells: ['ㄍ', 'ㄤ', 'ˉ'], total: 3 },
-    { question: 'Q2', cells: ['ㄑ', 'ㄧ', 'ㄣ', 'ˊ'], total: 4 },
-    { question: 'Q3', cells: ['ㄅ'], total: 1 },
-    { question: 'Q4', cells: ['ㄆ'], total: 1 },
-    { question: 'Q5', cells: ['ㄇ'], total: 1 },
+    { question: 'Q1', reply: '剛。', cells: ['ㄍ', 'ㄤ', 'ˉ'], total: 3 },
+    { question: 'Q2', reply: '琴。', cells: ['ㄑ', 'ㄧ', 'ㄣ', 'ˊ'], total: 4 },
+    { question: 'Q3', reply: 'ㄅ。', cells: ['ㄅ'], total: 1 },
+    { question: 'Q4', reply: 'ㄆ。', cells: ['ㄆ'], total: 1 },
+    { question: 'Q5', reply: 'ㄇ。', cells: ['ㄇ'], total: 1 },
   ];
 }
 
