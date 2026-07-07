@@ -130,6 +130,15 @@ describe('PhantomInkGenerator.checkAnswerLocale', () => {
 
     expect(result).toEqual({ isMainlandTerm: true, taiwanTerm: '滑鼠', reason: '大陸慣用語' });
   });
+
+  it('requests enough max_tokens to survive qwen3-32b hidden reasoning (regression: 256 caused json_validate_failed)', async () => {
+    const backend = new FakeBackend([JSON.stringify({ is_mainland_term: false })]);
+    const generator = new PhantomInkGenerator(backend);
+
+    await generator.checkAnswerLocale('鋼琴');
+
+    expect(backend.calls[0].maxTokens).toBeGreaterThanOrEqual(1024);
+  });
 });
 
 describe('PhantomInkGenerator.reviewQuestions', () => {
@@ -291,5 +300,22 @@ describe('PhantomInkGenerator.generate', () => {
     expect(result.questions).toEqual([
       { question: '（生成失敗）', reply: '（生成失敗）', isCustom: false },
     ]);
+  });
+
+  it('attributes a checkAnswerLocale failure to the locale check, not "謎底生成"', async () => {
+    // Regression: generateAnswer succeeded (answer produced) but the
+    // subsequent locale-check call threw — the progress log must not claim
+    // answer *generation* failed when it was the recheck that failed.
+    const backend = new FakeBackend([
+      JSON.stringify({ answer: '鋼琴' }),
+      'not valid json',
+    ]);
+    const generator = new PhantomInkGenerator(backend, 1);
+    const messages: string[] = [];
+
+    await generator.generate({ answerMode: 'ai', numQuestions: 2, onProgress: (m) => messages.push(m) });
+
+    expect(messages.some((m) => m.includes('謎底用語檢查失敗'))).toBe(true);
+    expect(messages.some((m) => m.startsWith('❌ 謎底生成失敗'))).toBe(false);
   });
 });

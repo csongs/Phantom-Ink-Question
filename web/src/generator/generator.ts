@@ -271,7 +271,11 @@ export class PhantomInkGenerator {
         { role: 'user', content: answerLocaleCheckPrompt(answer) },
       ],
       0.3,
-      256,
+      // Same qwen3-32b hidden-reasoning budget issue as generateAnswer above:
+      // 256 was observed to consistently trigger json_validate_failed with an
+      // empty failed_generation, wasting a full retry on a call whose actual
+      // answer generation had already succeeded.
+      1024,
     );
     return {
       isMainlandTerm: raw.is_mainland_term ?? false,
@@ -362,8 +366,9 @@ export class PhantomInkGenerator {
       let answerOk = false;
       const rejectedAnswers: string[] = [];
       for (let i = 0; i < this.maxRetries && !answerOk; i++) {
+        let candidate: string | undefined;
         try {
-          const candidate = await this.generateAnswer([...usedAnswers, ...rejectedAnswers], onProgress);
+          candidate = await this.generateAnswer([...usedAnswers, ...rejectedAnswers], onProgress);
           onProgress?.(`🎲 AI 產生的謎底：${candidate}`);
 
           const localeCheck = await this.checkAnswerLocale(candidate);
@@ -378,7 +383,11 @@ export class PhantomInkGenerator {
           answer = candidate;
           answerOk = true;
         } catch (err) {
-          onProgress?.(`❌ 謎底生成失敗（第 ${i + 1}/${this.maxRetries} 次）：${(err as Error).message}`);
+          // candidate may already be set here (generateAnswer succeeded but
+          // checkAnswerLocale threw) — don't blame "謎底生成" when it was the
+          // locale recheck that actually failed.
+          const stage = candidate ? '謎底用語檢查' : '謎底生成';
+          onProgress?.(`❌ ${stage}失敗（第 ${i + 1}/${this.maxRetries} 次）：${(err as Error).message}`);
         }
       }
       if (!answerOk) {
