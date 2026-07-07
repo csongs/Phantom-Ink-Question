@@ -51,6 +51,19 @@ describe('GroqBackend', () => {
     expect(body.response_format).toEqual({ type: 'json_object' });
   });
 
+  it('forwards reasoning_format to the request body when provided', async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: '{"x": 1}' } }] }),
+    });
+
+    const backend = new GroqBackend('gsk_test');
+    await backend.chat([{ role: 'user', content: 'hi' }], 0.7, undefined, { type: 'json_object' }, 'hidden');
+
+    const body = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
+    expect(body.reasoning_format).toBe('hidden');
+  });
+
   it('throws with the response body when the request fails', async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: false,

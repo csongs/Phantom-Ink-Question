@@ -1,5 +1,11 @@
 // web/src/backends/groq.ts
-import { extractJson, type ChatMessage, type LLMBackend, type ResponseFormat } from './shared';
+import {
+  extractJson,
+  type ChatMessage,
+  type LLMBackend,
+  type ReasoningFormat,
+  type ResponseFormat,
+} from './shared';
 
 export const GROQ_DEFAULT_MODEL = 'qwen/qwen3-32b';
 const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
@@ -47,6 +53,7 @@ export class GroqBackend implements LLMBackend {
     temperature = 0.7,
     maxTokens?: number,
     responseFormat?: ResponseFormat,
+    reasoningFormat?: ReasoningFormat,
   ): Promise<string> {
     const body: Record<string, unknown> = {
       model: this.model,
@@ -55,6 +62,7 @@ export class GroqBackend implements LLMBackend {
     };
     if (maxTokens) body.max_tokens = maxTokens;
     if (responseFormat) body.response_format = responseFormat;
+    if (reasoningFormat) body.reasoning_format = reasoningFormat;
 
     for (let attempt = 0; attempt <= MAX_429_RETRIES; attempt++) {
       await throttle();

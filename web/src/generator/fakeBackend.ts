@@ -1,10 +1,16 @@
 // web/src/generator/fakeBackend.ts
-import type { ChatMessage, LLMBackend, ResponseFormat } from '../backends/shared';
+import type { ChatMessage, LLMBackend, ReasoningFormat, ResponseFormat } from '../backends/shared';
 
 /** Scriptable LLMBackend for tests: returns queued replies in call order. */
 export class FakeBackend implements LLMBackend {
   private queue: string[];
-  public calls: { messages: ChatMessage[]; temperature?: number; maxTokens?: number }[] = [];
+  public calls: {
+    messages: ChatMessage[];
+    temperature?: number;
+    maxTokens?: number;
+    responseFormat?: ResponseFormat;
+    reasoningFormat?: ReasoningFormat;
+  }[] = [];
 
   constructor(replies: string[]) {
     this.queue = [...replies];
@@ -18,9 +24,10 @@ export class FakeBackend implements LLMBackend {
     messages: ChatMessage[],
     temperature?: number,
     maxTokens?: number,
-    _responseFormat?: ResponseFormat,
+    responseFormat?: ResponseFormat,
+    reasoningFormat?: ReasoningFormat,
   ): Promise<string> {
-    this.calls.push({ messages, temperature, maxTokens });
+    this.calls.push({ messages, temperature, maxTokens, responseFormat, reasoningFormat });
     const next = this.queue.shift();
     if (next === undefined) {
       throw new Error('FakeBackend: no more scripted replies queued');

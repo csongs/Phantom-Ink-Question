@@ -9,6 +9,14 @@ export interface ResponseFormat {
   type: 'json_object';
 }
 
+/**
+ * Groq-specific hint for reasoning models (e.g. qwen3-32b). Per Groq's docs,
+ * this must be 'parsed' or 'hidden' when combined with json_object mode —
+ * otherwise <think> tokens can consume the whole token budget before any
+ * JSON is produced. Backends that don't support reasoning models ignore it.
+ */
+export type ReasoningFormat = 'raw' | 'parsed' | 'hidden';
+
 export interface LLMBackend {
   modelName(): string;
   chat(
@@ -16,6 +24,7 @@ export interface LLMBackend {
     temperature?: number,
     maxTokens?: number,
     responseFormat?: ResponseFormat,
+    reasoningFormat?: ReasoningFormat,
   ): Promise<string>;
 }
 

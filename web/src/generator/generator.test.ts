@@ -52,6 +52,46 @@ describe('PhantomInkGenerator.designQuestions', () => {
   });
 });
 
+describe('PhantomInkGenerator.generateAnswer', () => {
+  it('parses the answer out of a JSON reply', async () => {
+    const backend = new FakeBackend([JSON.stringify({ answer: '鋼琴' })]);
+    const generator = new PhantomInkGenerator(backend);
+
+    const answer = await generator.generateAnswer();
+
+    expect(answer).toBe('鋼琴');
+  });
+
+  it('requests json_object mode so the model cannot return free-text reasoning', async () => {
+    const backend = new FakeBackend([JSON.stringify({ answer: '鋼琴' })]);
+    const generator = new PhantomInkGenerator(backend);
+
+    await generator.generateAnswer();
+
+    expect(backend.calls[0].responseFormat).toEqual({ type: 'json_object' });
+  });
+
+  it('hides reasoning tokens so a thinking model cannot exhaust the budget before emitting JSON', async () => {
+    const backend = new FakeBackend([JSON.stringify({ answer: '鋼琴' })]);
+    const generator = new PhantomInkGenerator(backend);
+
+    await generator.generateAnswer();
+
+    expect(backend.calls[0].reasoningFormat).toBe('hidden');
+  });
+
+  it('reports the raw reply via onProgress before parsing it', async () => {
+    const rawReply = JSON.stringify({ answer: '鋼琴' });
+    const backend = new FakeBackend([rawReply]);
+    const generator = new PhantomInkGenerator(backend);
+    const messages: string[] = [];
+
+    await generator.generateAnswer([], (msg) => messages.push(msg));
+
+    expect(messages.some((m) => m.includes(rawReply))).toBe(true);
+  });
+});
+
 describe('PhantomInkGenerator.reviewQuestions', () => {
   it('parses score/passed/comments from the reply', async () => {
     const backend = new FakeBackend([PASSING_REVIEW_REPLY]);

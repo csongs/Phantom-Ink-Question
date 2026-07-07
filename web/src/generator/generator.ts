@@ -44,8 +44,14 @@ export class PhantomInkGenerator {
     messages: ChatMessage[],
     temperature = 0.7,
     maxTokens?: number,
+    onRawReply?: (raw: string) => void,
   ): Promise<any> {
-    const reply = await this.llm.chat(messages, temperature, maxTokens, { type: 'json_object' });
+    // reasoning_format 'hidden' is required by Groq when combining json_object
+    // mode with reasoning models (e.g. qwen3-32b) — without it, <think> tokens
+    // can consume the whole completion before any JSON is produced, which
+    // Groq rejects with a json_validate_failed error.
+    const reply = await this.llm.chat(messages, temperature, maxTokens, { type: 'json_object' }, 'hidden');
+    onRawReply?.(reply);
     return JSON.parse(reply);
   }
 
@@ -227,7 +233,7 @@ export class PhantomInkGenerator {
     };
   }
 
-  async generateAnswer(usedAnswers: string[] = []): Promise<string> {
+  async generateAnswer(usedAnswers: string[] = [], onProgress?: ProgressCallback): Promise<string> {
     const usedHint = usedAnswers.length
       ? `以下謎底已經出過了，請不要重複：${usedAnswers.join('、')}`
       : '不要與之前出過的謎底重複';
@@ -238,7 +244,11 @@ export class PhantomInkGenerator {
         { role: 'user', content: answerGeneratorPrompt(seed, usedHint) },
       ],
       0.7,
-      30,
+      // Generous headroom: it's unclear whether hidden reasoning tokens count
+      // against this budget, and a truncated-mid-thought response is exactly
+      // what caused the json_validate_failed regression this replaces.
+      200,
+      (rawReply) => onProgress?.(`🔎 AI 原始回應（謎底）：${rawReply}`),
     );
     return (raw.answer ?? '').trim();
   }
@@ -310,7 +320,7 @@ export class PhantomInkGenerator {
 
     if (answerMode === 'ai') {
       onProgress?.('🎲 AI 思考謎底中...');
-      answer = await this.generateAnswer(usedAnswers);
+      answer = await this.generateAnswer(usedAnswers, onProgress);
       onProgress?.(`🎲 AI 產生的謎底：${answer}`);
     } else if (!answer) {
       throw new Error('answerMode 為 human 時必須提供謎底');

@@ -19,6 +19,8 @@ export class HFBackend implements LLMBackend {
     temperature = 0.7,
     maxTokens?: number,
     responseFormat?: ResponseFormat,
+    // HF Inference API has no equivalent to Groq's reasoning_format; unused here.
+    _reasoningFormat?: unknown,
   ): Promise<string> {
     const body: Record<string, unknown> = {
       model: this.model,
