@@ -205,6 +205,36 @@ describe('PhantomInkGenerator.reviewQuestions', () => {
 });
 
 describe('PhantomInkGenerator.generate', () => {
+  it('keeps a forced question and only refills its defective reply', async () => {
+    // Design returns the forced question with an EMPTY reply (defect) + one good.
+    const design = JSON.stringify({
+      answer: '鋼琴',
+      questions: [
+        { question: '我的自訂題目？', reply: '' },
+        { question: '它是何種顏色？', reply: '黑色.' },
+      ],
+    });
+    // fillForcedReplies response (replies only, order matches the forced-bad list).
+    const forcedFill = JSON.stringify({ replies: ['木頭製.'] });
+
+    const backend = new FakeBackend([design, forcedFill, PASSING_REVIEW_REPLY]);
+    const generator = new PhantomInkGenerator(backend, 3);
+
+    const result = await generator.generate({
+      answer: '鋼琴',
+      answerMode: 'human',
+      numQuestions: 2,
+      customQuestions: ['我的自訂題目？'],
+      skipReview: false,
+      skipSimulation: true,
+    });
+
+    const forced = result.questions.find((q) => q.question === '我的自訂題目？');
+    expect(forced).toBeTruthy();          // question preserved, not rewritten
+    expect(forced?.reply).toBe('木頭製。'); // reply refilled + post-processed
+    expect(forced?.isCustom).toBe(true);
+  });
+
   it('retries bad questions (duplicate replies) via fixQuestions before returning', async () => {
     const badDesign = JSON.stringify({
       answer: '鋼琴',

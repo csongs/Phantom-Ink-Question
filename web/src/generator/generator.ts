@@ -381,6 +381,24 @@ export class PhantomInkGenerator {
     return qs;
   }
 
+  /** Regenerates ONLY the replies for forced questions, keeping their text. */
+  private async fillForcedReplies(
+    answer: string,
+    items: { index: number; question: string }[],
+  ): Promise<Map<number, string>> {
+    const listText = items.map((it, k) => `${k + 1}. ${it.question}`).join('\n');
+    const prompt =
+      `謎底是「${answer}」。請為以下固定問題各填入一個回答，問題文字不可更改：\n` +
+      `${listText}\n\n` +
+      `回答規則：不超過六個中文字、不能出現謎底文字、全中文、語意明確、結尾加句號。\n` +
+      `輸出 JSON：{"replies": ["回答1", "回答2", ...]}（順序對應上面題號）`;
+    const raw = await this.jsonChat([{ role: 'user', content: prompt }]);
+    const replies: string[] = raw.replies ?? [];
+    const out = new Map<number, string>();
+    items.forEach((it, k) => out.set(it.index, replies[k] ?? ''));
+    return out;
+  }
+
   async generate(options: GenerateOptions = {}): Promise<QuestionSetWithMeta> {
     const {
       skipReview = false,
@@ -514,7 +532,23 @@ export class PhantomInkGenerator {
         }
         onProgress?.(`⚠️  發現 ${bad.size} 題不合格（${sortedBad.map(i => `Q${i + 1}`).join('、')}），只重新產生這 ${bad.size} 題...`);
 
-        questionSet = await this.fixQuestions(answer, questionSet, sortedBad, reasonsDict);
+        // Forced questions (checked bank + custom) must keep their exact text;
+        // only their reply may be regenerated. Free questions can be rewritten.
+        const forcedSet = new Set(forcedQuestions);
+        const forcedBad = sortedBad.filter((i) => forcedSet.has(questionSet.questions[i].question));
+        const freeBad = sortedBad.filter((i) => !forcedSet.has(questionSet.questions[i].question));
+
+        if (freeBad.length) {
+          questionSet = await this.fixQuestions(answer, questionSet, freeBad, reasonsDict);
+        }
+        if (forcedBad.length) {
+          const items = forcedBad.map((i) => ({ index: i, question: questionSet.questions[i].question }));
+          const newReplies = await this.fillForcedReplies(answer, items);
+          for (const [i, reply] of newReplies) {
+            questionSet.questions[i] = { ...questionSet.questions[i], reply };
+          }
+          this.postProcess(questionSet);
+        }
       }
 
       // Log the final (post-fix) questions
