@@ -271,11 +271,13 @@ export class PhantomInkGenerator {
         { role: 'user', content: answerLocaleCheckPrompt(answer) },
       ],
       0.3,
-      // Same qwen3-32b hidden-reasoning budget issue as generateAnswer above:
-      // 256 was observed to consistently trigger json_validate_failed with an
-      // empty failed_generation, wasting a full retry on a call whose actual
-      // answer generation had already succeeded.
-      1024,
+      // No max_tokens cap — deliberately. This is the only call that asks
+      // qwen3-32b to make a *judgment* (cross-strait vocabulary), which makes
+      // it reason far more than the trivial "pick a noun" generateAnswer call.
+      // Even 1024 was exhausted by hidden reasoning before any JSON appeared
+      // (json_validate_failed with an empty failed_generation). designQuestions
+      // and fixQuestions send no cap and never hit this, so do the same here
+      // and let the reasoning finish.
     );
     return {
       isMainlandTerm: raw.is_mainland_term ?? false,

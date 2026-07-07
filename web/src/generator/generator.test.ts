@@ -131,13 +131,13 @@ describe('PhantomInkGenerator.checkAnswerLocale', () => {
     expect(result).toEqual({ isMainlandTerm: true, taiwanTerm: '滑鼠', reason: '大陸慣用語' });
   });
 
-  it('requests enough max_tokens to survive qwen3-32b hidden reasoning (regression: 256 caused json_validate_failed)', async () => {
+  it('sends no max_tokens cap so qwen3-32b judgment reasoning cannot exhaust the budget (regression: even 1024 caused json_validate_failed)', async () => {
     const backend = new FakeBackend([JSON.stringify({ is_mainland_term: false })]);
     const generator = new PhantomInkGenerator(backend);
 
     await generator.checkAnswerLocale('鋼琴');
 
-    expect(backend.calls[0].maxTokens).toBeGreaterThanOrEqual(1024);
+    expect(backend.calls[0].maxTokens).toBeUndefined();
   });
 });
 
