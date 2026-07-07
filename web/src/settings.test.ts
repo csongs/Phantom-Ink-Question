@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { loadSettings, saveSettings, clearSettings } from './settings';
+import { loadSettings, saveSettings, clearSettings, validateQuestionSetup } from './settings';
 
 describe('settings', () => {
   beforeEach(() => {
@@ -24,5 +24,60 @@ describe('settings', () => {
     saveSettings({ backend: 'hf', apiKey: 'hf_abc', model: '' });
     clearSettings();
     expect(loadSettings()).toBeNull();
+  });
+});
+
+describe('validateQuestionSetup', () => {
+  const base = { numCandidates: 30, numQuestions: 10, pickedCount: 0, customCount: 0, bankSize: 112 };
+
+  it('accepts the defaults', () => {
+    expect(validateQuestionSetup(base)).toEqual({ ok: true });
+  });
+
+  it('rejects when used count does not exceed forced (M <= X+C)', () => {
+    const r = validateQuestionSetup({ ...base, numQuestions: 5, pickedCount: 3, customCount: 2 });
+    expect(r.ok).toBe(false);
+    expect(r.message).toContain('使用題數量');
+  });
+
+  it('accepts when used count is exactly one more than forced', () => {
+    expect(validateQuestionSetup({ ...base, numQuestions: 6, pickedCount: 3, customCount: 2 }).ok).toBe(true);
+  });
+
+  it('rejects when pool does not exceed used (N <= M)', () => {
+    const r = validateQuestionSetup({ ...base, numCandidates: 10, numQuestions: 10 });
+    expect(r.ok).toBe(false);
+    expect(r.message).toContain('選題數量');
+  });
+
+  it('rejects when pool exceeds available candidates (N > bankSize + C)', () => {
+    const r = validateQuestionSetup({ ...base, numCandidates: 113, customCount: 0 });
+    expect(r.ok).toBe(false);
+    expect(r.message).toContain('選題數量最多');
+  });
+
+  it('allows the pool to reach exactly bankSize + C', () => {
+    expect(validateQuestionSetup({ ...base, numCandidates: 114, numQuestions: 10, customCount: 2 }).ok).toBe(true);
+  });
+
+  it('rejects non-positive or non-integer counts', () => {
+    expect(validateQuestionSetup({ ...base, numQuestions: 0 }).ok).toBe(false);
+    expect(validateQuestionSetup({ ...base, numCandidates: 2.5 }).ok).toBe(false);
+  });
+});
+
+describe('settings persistence of question-setup fields', () => {
+  beforeEach(() => localStorage.clear());
+  it('round-trips the new fields', () => {
+    saveSettings({
+      backend: 'groq', apiKey: 'k', model: '',
+      numCandidates: 20, numQuestions: 8,
+      pickedBankQuestions: ['它是何種顏色？'], customQuestions: ['它配什麼飲料？'],
+    });
+    expect(loadSettings()).toEqual({
+      backend: 'groq', apiKey: 'k', model: '',
+      numCandidates: 20, numQuestions: 8,
+      pickedBankQuestions: ['它是何種顏色？'], customQuestions: ['它配什麼飲料？'],
+    });
   });
 });
