@@ -32,6 +32,9 @@ export interface GenerateOptions {
   skipSimulation?: boolean;
   answerMode?: 'ai' | 'human';
   numQuestions?: number;
+  numCandidates?: number;
+  pickedBankQuestions?: string[];
+  customQuestions?: string[];
   usedAnswers?: string[];
   onProgress?: ProgressCallback;
 }
@@ -74,14 +77,40 @@ export class PhantomInkGenerator {
     return reply.replace(/[。，、！？；：「」『』（）()\s]/g, '').length;
   }
 
+  /** Guarantees every forced question is present: forced first (reusing the AI's
+   *  reply for them when given, else empty), then the AI's other picks, capped at
+   *  numQuestions. */
+  static reconcileForced(
+    aiQuestions: QuestionItem[],
+    forced: string[],
+    numQuestions: number,
+  ): QuestionItem[] {
+    const byQuestion = new Map(aiQuestions.map((q) => [q.question, q]));
+    const forcedItems: QuestionItem[] = forced.map((q) => ({
+      question: q,
+      reply: byQuestion.get(q)?.reply ?? '',
+      isCustom: false,
+    }));
+    const forcedSet = new Set(forced);
+    const rest = aiQuestions.filter((q) => !forcedSet.has(q.question));
+    const slotsLeft = Math.max(0, numQuestions - forcedItems.length);
+    return [...forcedItems, ...rest.slice(0, slotsLeft)];
+  }
+
   // Note: question design is identical for AI- and human-supplied answers —
   // only the answer's *source* differs (see generate()). The AI always fills
   // the replies from the bank-selected questions.
   async designQuestions(
     answer: string,
-    numQuestions = 10,
+    opts: { numQuestions?: number; numCandidates?: number; forcedQuestions?: string[] } = {},
   ): Promise<QuestionSet> {
-    const { system, user } = formatDesignerPrompt(answer, numQuestions);
+    const numQuestions = opts.numQuestions ?? 10;
+    const forced = opts.forcedQuestions ?? [];
+    const { system, user } = formatDesignerPrompt(answer, {
+      numQuestions,
+      numCandidates: opts.numCandidates,
+      forcedQuestions: forced,
+    });
     const raw = await this.jsonChat([
       { role: 'system', content: system },
       { role: 'user', content: user },
@@ -95,6 +124,11 @@ export class PhantomInkGenerator {
 
     let qs: QuestionSet = { answer: raw.answer, questions };
     qs = this.postProcess(qs);
+
+    // Deterministically guarantee forced questions are present.
+    if (forced.length) {
+      qs.questions = PhantomInkGenerator.reconcileForced(qs.questions, forced, numQuestions);
+    }
 
     for (const q of qs.questions) {
       if (!QUESTION_BANK.includes(q.question)) q.isCustom = true;
@@ -353,9 +387,14 @@ export class PhantomInkGenerator {
       skipSimulation = true,
       answerMode = 'ai',
       numQuestions = 10,
+      numCandidates,
       usedAnswers = [],
       onProgress,
     } = options;
+    const forcedQuestions = [
+      ...(options.pickedBankQuestions ?? []),
+      ...(options.customQuestions ?? []),
+    ];
     let answer = options.answer ?? '';
 
     if (answerMode === 'ai') {
@@ -431,7 +470,11 @@ export class PhantomInkGenerator {
       let questionSet: QuestionSet;
       try {
         onProgress?.('🤖 AI 出題中...');
-        questionSet = await this.designQuestions(answer, numQuestions);
+        questionSet = await this.designQuestions(answer, {
+          numQuestions,
+          numCandidates,
+          forcedQuestions,
+        });
       } catch {
         onProgress?.('❌ 出題失敗，重試中...');
         continue;

@@ -23,7 +23,7 @@ describe('PhantomInkGenerator.designQuestions', () => {
     const backend = new FakeBackend([GOOD_DESIGN_REPLY]);
     const generator = new PhantomInkGenerator(backend);
 
-    const qs = await generator.designQuestions('鋼琴', 2);
+    const qs = await generator.designQuestions('鋼琴', { numQuestions: 2 });
 
     expect(qs.answer).toBe('鋼琴');
     expect(qs.questions[0].reply).toBe('木頭與金屬弦。');
@@ -38,7 +38,7 @@ describe('PhantomInkGenerator.designQuestions', () => {
     const backend = new FakeBackend([simplifiedAnswerReply]);
     const generator = new PhantomInkGenerator(backend);
 
-    const qs = await generator.designQuestions('贝壳', 1);
+    const qs = await generator.designQuestions('贝壳', { numQuestions: 1 });
 
     expect(qs.answer).toBe('貝殼');
   });
@@ -51,7 +51,7 @@ describe('PhantomInkGenerator.designQuestions', () => {
     const backend = new FakeBackend([madeUpQuestion]);
     const generator = new PhantomInkGenerator(backend);
 
-    const qs = await generator.designQuestions('鋼琴', 1);
+    const qs = await generator.designQuestions('鋼琴', { numQuestions: 1 });
 
     expect(qs.questions[0].isCustom).toBe(true);
   });
@@ -64,9 +64,58 @@ describe('PhantomInkGenerator.designQuestions', () => {
     const backend = new FakeBackend([GOOD_DESIGN_REPLY]);
     const generator = new PhantomInkGenerator(backend);
 
-    const qs = await generator.designQuestions('鋼琴', 2);
+    const qs = await generator.designQuestions('鋼琴', { numQuestions: 2 });
 
     expect(qs.questions.every((q) => q.reply !== '')).toBe(true);
+  });
+});
+
+describe('PhantomInkGenerator.reconcileForced', () => {
+  const item = (question: string, reply: string) => ({ question, reply, isCustom: false });
+
+  it('puts forced questions first, reusing the AI reply when present', () => {
+    const ai = [item('B', '乙。'), item('A', '甲。'), item('C', '丙。')];
+    const out = PhantomInkGenerator.reconcileForced(ai, ['A'], 3);
+    expect(out[0]).toEqual(item('A', '甲。'));
+    expect(out.map((q) => q.question)).toEqual(['A', 'B', 'C']);
+  });
+
+  it('gives a forced question an empty reply when the AI omitted it', () => {
+    const ai = [item('B', '乙。'), item('C', '丙。')];
+    const out = PhantomInkGenerator.reconcileForced(ai, ['A'], 3);
+    expect(out[0]).toEqual({ question: 'A', reply: '', isCustom: false });
+    expect(out.map((q) => q.question)).toEqual(['A', 'B', 'C']);
+  });
+
+  it('truncates AI extras so total equals numQuestions', () => {
+    const ai = [item('B', '乙。'), item('C', '丙。'), item('D', '丁。')];
+    const out = PhantomInkGenerator.reconcileForced(ai, ['A'], 2);
+    expect(out.map((q) => q.question)).toEqual(['A', 'B']);
+  });
+});
+
+describe('PhantomInkGenerator.designQuestions forced', () => {
+  it('guarantees forced questions are present and marks custom ones', async () => {
+    // AI ignores the custom question and returns two bank questions.
+    const reply = JSON.stringify({
+      answer: '鋼琴',
+      questions: [
+        { question: '它由什麼材料製成？', reply: '木頭.' },
+        { question: '它是何種顏色？', reply: '黑色.' },
+      ],
+    });
+    const backend = new FakeBackend([reply]);
+    const generator = new PhantomInkGenerator(backend);
+
+    const qs = await generator.designQuestions('鋼琴', {
+      numQuestions: 2,
+      forcedQuestions: ['我的自訂題目？'],
+    });
+
+    expect(qs.questions.some((q) => q.question === '我的自訂題目？')).toBe(true);
+    const custom = qs.questions.find((q) => q.question === '我的自訂題目？');
+    expect(custom?.isCustom).toBe(true);
+    expect(qs.questions.length).toBe(2);
   });
 });
 
