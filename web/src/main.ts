@@ -11,6 +11,7 @@ import {
   escapeHtml,
   type GameQuestion,
 } from './game';
+import { renderQuestionSetup, readQuestionSetup, refreshSetupValidity } from './questionSetup';
 
 export function toGameQuestions(
   questions: { question: string; reply: string }[],
@@ -125,7 +126,10 @@ async function startGame(
     const generator = new PhantomInkGenerator(buildBackend(settings));
     const result = await generator.generate({
       answerMode: settings.answerMode ?? 'ai',
-      numQuestions: 10,
+      numQuestions: settings.numQuestions ?? 10,
+      numCandidates: settings.numCandidates,
+      pickedBankQuestions: settings.pickedBankQuestions,
+      customQuestions: settings.customQuestions,
       onProgress: progressLog,
       answer: humanAnswer,
     });
@@ -207,7 +211,7 @@ async function startGame(
 
 // ── Settings screen ──────────────────────
 
-function showSettingsScreen(root: HTMLElement): void {
+export function showSettingsScreen(root: HTMLElement): void {
   const existing = loadSettings();
   const apiKey = escapeHtml(existing?.apiKey ?? '');
   const model = escapeHtml(existing?.model ?? '');
@@ -252,6 +256,8 @@ function showSettingsScreen(root: HTMLElement): void {
         </div>
       </div>
 
+      <div id="pi-question-setup"></div>
+
       <p class="pi-privacy-note">Key 只存在你目前這台裝置的瀏覽器裡，不會送到任何伺服器。</p>
 
       <div class="pi-settings-actions">
@@ -271,6 +277,23 @@ function showSettingsScreen(root: HTMLElement): void {
     });
   });
 
+  // Question-setup section: render + gate the start button on its validity.
+  const setupContainer = document.getElementById('pi-question-setup');
+  if (setupContainer) {
+    renderQuestionSetup(setupContainer, {
+      numCandidates: existing?.numCandidates,
+      numQuestions: existing?.numQuestions,
+      pickedBankQuestions: existing?.pickedBankQuestions,
+      customQuestions: existing?.customQuestions,
+    });
+    const startBtn = document.getElementById('pi-start') as HTMLButtonElement | null;
+    const syncStart = () => { if (startBtn) startBtn.disabled = !refreshSetupValidity(setupContainer); };
+    setupContainer.addEventListener('input', syncStart);
+    setupContainer.addEventListener('change', syncStart);
+    setupContainer.addEventListener('click', syncStart);
+    syncStart();
+  }
+
   document.getElementById('pi-start')?.addEventListener('click', () => {
     const backend = (document.getElementById('pi-backend') as HTMLSelectElement).value as 'groq' | 'hf';
     const apiKey = (document.getElementById('pi-apikey') as HTMLInputElement).value.trim();
@@ -280,7 +303,18 @@ function showSettingsScreen(root: HTMLElement): void {
     const humanAnswer = (document.getElementById('pi-human-answer') as HTMLInputElement).value.trim();
     if (!apiKey) return;
     if (answerMode === 'human' && !humanAnswer) return;
-    const settings: Settings = { backend, apiKey, model, answerMode, humanAnswer };
+
+    const setupEl = document.getElementById('pi-question-setup')!;
+    if (!refreshSetupValidity(setupEl)) return;
+    const setup = readQuestionSetup(setupEl);
+
+    const settings: Settings = {
+      backend, apiKey, model, answerMode, humanAnswer,
+      numCandidates: setup.numCandidates,
+      numQuestions: setup.numQuestions,
+      pickedBankQuestions: setup.pickedBankQuestions,
+      customQuestions: setup.customQuestions,
+    };
     saveSettings(settings);
     void startGame(root, settings, humanAnswer);
   });

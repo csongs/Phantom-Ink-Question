@@ -527,3 +527,13 @@ body {
   color: var(--pi-text-dim);
   border-color: var(--pi-border-soft);
 }
+
+.pi-question-setup .pi-bank-body { display: none; }
+.pi-question-setup .pi-bank-body.open { display: block; }
+.pi-question-setup .pi-bank-list { max-height: 200px; overflow-y: auto; border: 1px solid #4444; border-radius: 6px; padding: 4px; }
+.pi-question-setup .pi-bank-item { display: block; padding: 2px 4px; cursor: pointer; }
+.pi-question-setup .pi-bank-search { width: 100%; margin-bottom: 6px; }
+.pi-question-setup .pi-custom-row { display: flex; gap: 6px; margin-bottom: 4px; }
+.pi-question-setup .pi-custom-input { flex: 1; }
+.pi-question-setup .pi-setup-warning { color: #e06c6c; min-height: 1.2em; margin-top: 6px; }
+.pi-question-setup .pi-bank-count { margin-left: 8px; opacity: 0.75; }

@@ -1,6 +1,6 @@
 // web/src/main.test.ts
-import { describe, it, expect } from 'vitest';
-import { toGameQuestions, describeGenerationError } from './main';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { toGameQuestions, describeGenerationError, showSettingsScreen } from './main';
 
 describe('toGameQuestions', () => {
   it('converts generator output into cell data the game understands, with a trailing period cell', () => {
@@ -33,5 +33,31 @@ describe('describeGenerationError', () => {
 
   it('stringifies a non-Error throw value', () => {
     expect(describeGenerationError('boom')).toBe('boom');
+  });
+});
+
+describe('settings screen question-setup', () => {
+  beforeEach(() => { document.body.innerHTML = '<div id="app"></div>'; localStorage.clear(); });
+
+  it('renders the question-setup section', () => {
+    const root = document.getElementById('app')!;
+    showSettingsScreen(root);
+    expect(root.querySelector('#pi-num-candidates')).toBeTruthy();
+    expect(root.querySelector('#pi-num-questions')).toBeTruthy();
+    expect(root.querySelector('.pi-bank-list')).toBeTruthy();
+  });
+
+  it('disables 開始遊戲 while the setup is invalid', () => {
+    const root = document.getElementById('app')!;
+    showSettingsScreen(root);
+    (root.querySelector('#pi-apikey') as HTMLInputElement).value = 'k';
+    // Make it invalid: used count below forced.
+    (root.querySelector('#pi-num-questions') as HTMLInputElement).value = '1';
+    root.querySelectorAll<HTMLInputElement>('.pi-bank-item input').forEach((cb, i) => {
+      if (i < 2) { cb.checked = true; }
+    });
+    root.querySelector('.pi-bank-list')?.dispatchEvent(new Event('change', { bubbles: true }));
+    const start = root.querySelector('#pi-start') as HTMLButtonElement;
+    expect(start.disabled).toBe(true);
   });
 });
