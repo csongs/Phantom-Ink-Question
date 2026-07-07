@@ -2,11 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { formatDesignerPrompt, QUESTION_BANK } from './prompts';
 
 describe('formatDesignerPrompt', () => {
-  it('computes hard/easy counts the same way as the Python version (~40% hard, default 10 questions)', () => {
+  it('builds a solvability-first designer prompt without difficulty-ramp rules', () => {
     const { system, user } = formatDesignerPrompt('鋼琴', 10);
     expect(system).toContain('選出最適合的10個問題');
-    expect(system).toContain('前4題不能讓一般人直接猜出');
-    expect(system).toContain('第10題必須幾乎可以猜出');
+    // Difficulty-ramp language was intentionally removed — clues should be
+    // solvable, not artificially hard.
+    expect(system).not.toContain('由難到易');
+    expect(system).not.toContain('不能讓一般人直接猜出');
+    expect(system).toContain('有效線索');
     expect(user).toContain('謎底：鋼琴');
   });
 

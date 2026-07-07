@@ -17,6 +17,7 @@ import {
   answerGeneratorPrompt,
   formatDesignerPrompt,
   reviewerUserPrompt,
+  sampleRandom,
   simulatorUserPrompt,
 } from './prompts';
 import { convertPunctuation, toTraditional } from '../zhconv';
@@ -66,9 +67,16 @@ export class PhantomInkGenerator {
     return qs;
   }
 
+  /** Number of meaningful characters in a reply, excluding punctuation/space. */
+  private static replyCharCount(reply: string): number {
+    return reply.replace(/[。，、！？；：「」『』（）()\s]/g, '').length;
+  }
+
+  // Note: question design is identical for AI- and human-supplied answers —
+  // only the answer's *source* differs (see generate()). The AI always fills
+  // the replies from the bank-selected questions.
   async designQuestions(
     answer: string,
-    answerMode: 'ai' | 'human' = 'ai',
     numQuestions = 10,
   ): Promise<QuestionSet> {
     const { system, user } = formatDesignerPrompt(answer, numQuestions);
@@ -108,10 +116,6 @@ export class PhantomInkGenerator {
     }
     if (leakReplies.length) {
       console.warn('⚠️ 回答包含謎底文字（可能太簡單）：', leakReplies);
-    }
-
-    if (answerMode === 'human') {
-      qs.questions = qs.questions.map((q) => ({ question: q.question, reply: '', isCustom: q.isCustom }));
     }
 
     return qs;
@@ -275,12 +279,19 @@ export class PhantomInkGenerator {
       .map(({ q, i }) => `第 ${i + 1} 題：${q.question} → ${q.reply}`)
       .join('\n');
 
+    const bankSample = sampleRandom(QUESTION_BANK, Math.min(30, QUESTION_BANK.length))
+      .map((q) => `- ${q}`)
+      .join('\n');
+
     const prompt =
       `謎底是「${answer}」，已經有 ${goodCount} 題合格的題目：\n` +
       `${goodDesc}\n\n` +
       `以下 ${badIndices.length} 題需要重做：\n` +
       `${badDesc}\n\n` +
-      `請重新產生這 ${badIndices.length} 題（問題從題庫選，回答根據謎底填入），` +
+      `請重新產生這 ${badIndices.length} 題，規則：\n` +
+      `1. 問題**必須**從以下題庫原文照抄選出，不可自創：\n${bankSample}\n` +
+      `2. 回答根據謎底填入，**不超過六個中文字**、不能出現謎底文字、全中文\n` +
+      `3. 不要和上面已合格的題目重複或聚焦同一邏輯\n\n` +
       `輸出 JSON 格式：\n` +
       `{"questions": [\n` +
       `  {"question": "...", "reply": "..."},\n` +
@@ -359,7 +370,7 @@ export class PhantomInkGenerator {
       let questionSet: QuestionSet;
       try {
         onProgress?.('🤖 AI 出題中...');
-        questionSet = await this.designQuestions(answer, answerMode, numQuestions);
+        questionSet = await this.designQuestions(answer, numQuestions);
       } catch {
         onProgress?.('❌ 出題失敗，重試中...');
         continue;
@@ -379,6 +390,11 @@ export class PhantomInkGenerator {
         questionSet.questions.forEach((q, i) => {
           if (!q.reply.trim()) bad.add(i);
         });
+        // Hard 6-char cap: this is an ink-reveal game, so long replies break
+        // it. The AI reviewer alone let 14-char answers ship, so enforce here.
+        questionSet.questions.forEach((q, i) => {
+          if (PhantomInkGenerator.replyCharCount(q.reply) > 6) bad.add(i);
+        });
 
         if (bad.size === 0) break;
 
@@ -390,6 +406,7 @@ export class PhantomInkGenerator {
           if (!r.trim()) reasonsDict[i].push('空回答');
           if (r.trim() && replies.filter((x) => x === r).length > 1) reasonsDict[i].push('回答重複');
           if ([...answer].some((c) => r.includes(c))) reasonsDict[i].push('洩漏謎底文字');
+          if (PhantomInkGenerator.replyCharCount(r) > 6) reasonsDict[i].push('回答過長（超過六字）');
         }
         onProgress?.(`⚠️  發現 ${bad.size} 題不合格（${sortedBad.map(i => `Q${i + 1}`).join('、')}），只重新產生這 ${bad.size} 題...`);
 

@@ -3,11 +3,12 @@ import { describe, it, expect } from 'vitest';
 import { PhantomInkGenerator } from './generator';
 import { FakeBackend } from './fakeBackend';
 
+// Both replies are within the 6-char limit (木頭與金屬弦 = 6, 黑色或白色 = 5).
 const GOOD_DESIGN_REPLY = JSON.stringify({
   answer: '鋼琴',
   questions: [
     { question: '它由什麼材料製成？', reply: '木頭與金屬弦.' },
-    { question: '它是何種顏色？', reply: '通常是黑色或白色.' },
+    { question: '它是何種顏色？', reply: '黑色或白色.' },
   ],
 });
 
@@ -22,11 +23,11 @@ describe('PhantomInkGenerator.designQuestions', () => {
     const backend = new FakeBackend([GOOD_DESIGN_REPLY]);
     const generator = new PhantomInkGenerator(backend);
 
-    const qs = await generator.designQuestions('鋼琴', 'ai', 2);
+    const qs = await generator.designQuestions('鋼琴', 2);
 
     expect(qs.answer).toBe('鋼琴');
     expect(qs.questions[0].reply).toBe('木頭與金屬弦。');
-    expect(qs.questions[1].reply).toBe('通常是黑色或白色。');
+    expect(qs.questions[1].reply).toBe('黑色或白色。');
   });
 
   it('marks questions not present in QUESTION_BANK as custom', async () => {
@@ -37,18 +38,22 @@ describe('PhantomInkGenerator.designQuestions', () => {
     const backend = new FakeBackend([madeUpQuestion]);
     const generator = new PhantomInkGenerator(backend);
 
-    const qs = await generator.designQuestions('鋼琴', 'ai', 1);
+    const qs = await generator.designQuestions('鋼琴', 1);
 
     expect(qs.questions[0].isCustom).toBe(true);
   });
 
-  it('empties out replies in human answer mode', async () => {
+  it('keeps the AI-filled replies regardless of answer source (no human-mode wipe)', async () => {
+    // Question design is identical whether the answer is AI- or human-supplied;
+    // only the answer's source differs. Replies must never be blanked here —
+    // doing so previously routed every question through fixQuestions and
+    // produced off-bank questions and over-long replies.
     const backend = new FakeBackend([GOOD_DESIGN_REPLY]);
     const generator = new PhantomInkGenerator(backend);
 
-    const qs = await generator.designQuestions('鋼琴', 'human', 2);
+    const qs = await generator.designQuestions('鋼琴', 2);
 
-    expect(qs.questions.every((q) => q.reply === '')).toBe(true);
+    expect(qs.questions.every((q) => q.reply !== '')).toBe(true);
   });
 });
 
@@ -135,6 +140,33 @@ describe('PhantomInkGenerator.generate', () => {
 
     expect(result.questions.map((q) => q.reply)).toEqual(['木頭。', '黑色。']);
     expect(result.review).toEqual({ score: 88, passed: true, comments: ['難度合理'] });
+  });
+
+  it('regenerates replies that exceed the 6-character limit', async () => {
+    const longDesign = JSON.stringify({
+      answer: '鋼琴',
+      questions: [
+        { question: '它由什麼材料製成？', reply: '這是一種非常長而且明顯超過六個字的回答.' },
+        { question: '它是何種顏色？', reply: '黑色.' },
+      ],
+    });
+    const fixedOne = JSON.stringify({
+      questions: [{ question: '它由什麼材料製成？', reply: '木頭.' }],
+    });
+
+    const backend = new FakeBackend([longDesign, fixedOne, PASSING_REVIEW_REPLY]);
+    const generator = new PhantomInkGenerator(backend);
+
+    const result = await generator.generate({
+      answer: '鋼琴',
+      answerMode: 'human',
+      numQuestions: 2,
+      skipReview: false,
+      skipSimulation: true,
+    });
+
+    const charCount = (r: string) => r.replace(/[。，、！？；：「」『』（）()\s]/g, '').length;
+    expect(result.questions.every((q) => charCount(q.reply) <= 6)).toBe(true);
   });
 
   it('returns a failure placeholder after exhausting max retries', async () => {

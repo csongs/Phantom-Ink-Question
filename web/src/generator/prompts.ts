@@ -1,7 +1,5 @@
 export function designerSystemPrompt(
   numQuestions: number,
-  hardCount: number,
-  easyCount: number,
   questionBankText: string,
 ): string {
   return `你是一位經驗豐富的「靈媒遊戲」出題老師。請全程使用臺灣慣用詞彙（例如：印表機而非打印機、網路而非網絡、滑鼠而非鼠標）。
@@ -14,17 +12,18 @@ export function designerSystemPrompt(
 3. 玩家只看到問題，回答會以注音一格一格顯示
 4. 玩家可在任何時候猜測謎底
 
+## 核心目標
+玩家只靠這${numQuestions}題有限的問答就要猜出謎底。**你的首要任務是讓這組線索「猜得出來」**——七題本身要湊出答案已經很不容易，不需要刻意刁難或增加難度。線索明確、彼此呼應、共同指向同一個謎底，是好事，不是缺點。
+
 ## 出題規則（嚴格遵守）
 1. 每題回答必須是**一句短語**，不超過六個中文字
 2. 回答**不能直接包含謎底**（例如謎底是「鋼琴」，回答不能出現「鋼琴」）
-3. ${numQuestions}題由**難到易**排列
-4. 前${hardCount}題不能讓一般人直接猜出
-5. 第${numQuestions}題必須幾乎可以猜出
-6. 不可重複詢問同一類資訊
-7. 每個回答必須可以轉成注音
-8. 回答必須**唯一合理**（不能讓人有多種解讀）
-9. **全中文**，不可出現英文或數字
-10. 問題和回答**結尾必須加句號**，讓玩家知道提示結束了
+3. 每一題都要是**有效線索**：綜合所有回答，玩家要有辦法推理出謎底
+4. 各題可以從不同角度**聚焦同一個核心邏輯**（資訊部分重疊是允許的），只要回答不要一字不差地重複
+5. 每個回答必須可以轉成注音
+6. 回答必須**唯一合理**（不能讓人有多種解讀）
+7. **全中文**，不可出現英文或數字
+8. 問題和回答**結尾必須加句號**，讓玩家知道提示結束了
 
 ## 題庫（從這裡選問題）
 
@@ -32,11 +31,10 @@ ${questionBankText}
 
 ## 選題原則
 
-1. 根據謎底特質，選最有意義、最能勾起思考的${numQuestions}題
+1. 根據謎底特質，選最有意義、最能勾起聯想的${numQuestions}題
 2. 避開對這個謎底來說太奇怪或無意義的問題
-3. 確定涵蓋多個面向（不要全部問顏色/形狀/價格）
-4. 前${hardCount}題選需要專業知識或間接聯想的
-5. 最後${easyCount}題選接近生活經驗的`;
+3. 涵蓋多個面向，但每一題都要能幫助玩家指向同一個謎底
+4. 以「玩家看完這些線索有辦法猜出來」為最高原則，不要為了增加難度而選無關或誤導的題`;
 }
 
 export function designerUserPrompt(answer: string, numQuestions: number): string {
@@ -56,7 +54,7 @@ export function designerUserPrompt(answer: string, numQuestions: number): string
 }`;
 }
 
-function sampleRandom<T>(arr: readonly T[], n: number): T[] {
+export function sampleRandom<T>(arr: readonly T[], n: number): T[] {
   const copy = [...arr];
   for (let i = copy.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -69,34 +67,37 @@ export function formatDesignerPrompt(
   answer: string,
   numQuestions = 10,
 ): { system: string; user: string } {
-  const hardCount = Math.max(1, Math.floor((numQuestions * 2) / 5));
-  const easyCount = Math.max(2, numQuestions - hardCount - 1);
   const sample = sampleRandom(QUESTION_BANK, Math.min(30, QUESTION_BANK.length));
   const bankText = sample.map((q) => `- ${q}`).join('\n');
   return {
-    system: designerSystemPrompt(numQuestions, hardCount, easyCount, bankText),
+    system: designerSystemPrompt(numQuestions, bankText),
     user: designerUserPrompt(answer, numQuestions),
   };
 }
 
-export const REVIEWER_SYSTEM_PROMPT = `你是一位嚴格的「靈媒遊戲」品質測試員。
+export const REVIEWER_SYSTEM_PROMPT = `你是一位「靈媒遊戲」品質測試員。
 
 你的工作是評估一組題目的品質，確保它們適合實際遊戲。
 
+## 最高原則
+玩家只靠這一組有限的問答就要猜出謎底，**七題本身要湊出答案已經很不容易**。因此你的評估要以「玩家猜得出來」為核心，**不要**因為線索太明確、太好猜、或難度不夠而扣分——那些反而是優點。
+
 ## 評估項目
-1. **暴雷檢查** — 是否有任何一題的回答直接或間接洩漏謎底？
-2. **難度遞增** — 是否從難到易？前幾題是否夠難？
-3. **重複檢查** — 是否有兩題詢問同一類資訊？
-4. **回答包含謎底** — 回答中是否直接包含謎底文字？
-5. **回答長度** — 是否有回答超過六個中文字？
-6. **回答歧義** — 是否有回答可能有多種解讀？
-7. **遊戲適合度** — 整體來說是否適合靈媒遊戲？
+1. **可解性（最重要）** — 綜合所有問答，玩家有沒有辦法推理出謎底？線索是否足夠、彼此呼應、共同指向同一個答案？
+2. **回答不含謎底** — 回答有沒有直接出現謎底文字？（只擋「直接寫出謎底」；間接指向謎底是好事，不扣分）
+3. **回答長度** — 有沒有回答超過六個中文字？
+4. **回答唯一合理** — 回答能否轉成注音、語意是否單一、會不會有多種解讀？
+5. **遊戲適合度** — 整體是否適合靈媒遊戲？
+
+## 明確允許（不可當缺點）
+- 多題從不同角度聚焦同一個核心邏輯、資訊部分重疊
+- 線索明確、容易聯想、玩家很快就能猜到
 
 ## 評分標準
-- 90-100：完美，可以直接使用
-- 70-89：良好，小幅調整即可
-- 50-69：需要大幅修改
-- 0-49：不可使用`;
+- 90-100：線索充分呼應，玩家能順利推出謎底，且完全合規
+- 70-89：可解，只有小瑕疵
+- 50-69：線索不足或彼此矛盾，玩家難以推出謎底
+- 0-49：無法解，或違反硬規則（超長、直接寫出謎底、無法轉注音）`;
 
 export function reviewerUserPrompt(answer: string, questionsText: string): string {
   return `請評估以下題組：
