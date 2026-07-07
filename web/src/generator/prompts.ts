@@ -167,17 +167,13 @@ ${history}
 }
 
 export function answerGeneratorPrompt(seed: string, usedHint: string): string {
-  return `你是一位「靈媒遊戲」的題目設計師。
-請產生一個適合當作謎底的具體名詞。請使用臺灣慣用詞彙。
-
+  return `產生一個適合當作謎底的具體名詞（臺灣用語）。
 要求：
-- 必須是具體名詞（不要選太抽象的）
-- 提示方向：與「${seed}」有關的事物
-- 不能太冷門
-- 兩個字或三個字為主
+- 必須是具體名詞
+- 與「${seed}」有關
+- 兩個字或三個字
 - ${usedHint}
-- 不要有標點符號
-- 只要輸出一個詞，不要任何其他文字`;
+- 只輸出一個詞，不要其他任何文字、不要解釋、不要標點符號`;
 }
 
 export const ANSWER_SEEDS: readonly string[] = [

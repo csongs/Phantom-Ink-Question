@@ -233,11 +233,16 @@ export class PhantomInkGenerator {
       : '不要與之前出過的謎底重複';
     const seed = ANSWER_SEEDS[Math.floor(Math.random() * ANSWER_SEEDS.length)];
     const reply = await this.llm.chat(
-      [{ role: 'user', content: answerGeneratorPrompt(seed, usedHint) }],
-      0.9,
-      20,
+      [
+        { role: 'system', content: '你只輸出一個臺灣用語的詞。不加任何其他文字。' },
+        { role: 'user', content: answerGeneratorPrompt(seed, usedHint) },
+      ],
+      0.7,
+      30,
     );
-    return reply.trim();
+    // Strip any leading/trailing junk — keep only the first CJK word
+    const cleaned = reply.replace(/^[^一-鿿A-Za-z]*/, '').replace(/[^一-鿿A-Za-z].*$/, '').trim();
+    return cleaned || reply.trim();
   }
 
   private async fixQuestions(
@@ -308,6 +313,11 @@ export class PhantomInkGenerator {
     if (answerMode === 'ai') {
       onProgress?.('🎲 AI 思考謎底中...');
       answer = await this.generateAnswer(usedAnswers);
+      // Validate answer — catch cases where AI outputs reasoning instead of a word
+      if (answer.length < 2 || answer.length > 6 || /[，。！？、；：]/.test(answer)) {
+        onProgress?.(`⚠️ 謎底格式異常（"${answer}"），重試...`);
+        answer = await this.generateAnswer(usedAnswers);
+      }
       onProgress?.(`🎲 AI 產生的謎底：${answer}`);
     } else if (!answer) {
       throw new Error('answerMode 為 human 時必須提供謎底');
