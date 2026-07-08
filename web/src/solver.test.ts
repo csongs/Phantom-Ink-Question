@@ -1,6 +1,13 @@
 // web/src/solver.test.ts
 import { describe, it, expect } from 'vitest';
-import { parseSolveResult, solvePuzzle, SOLVER_SYSTEM_PROMPT } from './solver';
+import {
+  parseSolveResult,
+  solvePuzzle,
+  CLUE_SOLVER_SYSTEM_PROMPT,
+  FINAL_GUESSER_SYSTEM_PROMPT,
+  finalGuesserUserPrompt,
+  type PerQuestionGuess,
+} from './solver';
 import { FakeBackend } from './generator/fakeBackend';
 
 describe('parseSolveResult', () => {
@@ -21,7 +28,7 @@ describe('parseSolveResult', () => {
       per_question: [{ question: 2, guess: '冰宮', reason: 'x' }],
       final_guesses: ['溜冰鞋', { guess: '冰刀' }],
     });
-    expect(out.perQuestion[0]).toEqual({ q: 2, replyGuess: '冰宮', note: 'x' });
+    expect(out.perQuestion[0]).toEqual({ q: 2, replyGuess: '冰宮', note: 'x', question: undefined });
     expect(out.finalGuesses.map((f) => f.answer)).toEqual(['溜冰鞋', '冰刀']);
   });
 
@@ -32,73 +39,103 @@ describe('parseSolveResult', () => {
     expect(out.summary).toBe('');
   });
 
-  it('keeps all candidate answers without capping (rendering shows every guess)', () => {
+  it('keeps all candidate answers without capping', () => {
     const five = ['a', 'b', 'c', 'd', 'e'].map((answer) => ({ answer, reason: '' }));
     const out = parseSolveResult({ final_guesses: five });
     expect(out.finalGuesses).toHaveLength(5);
   });
 });
 
-describe('SOLVER_SYSTEM_PROMPT', () => {
+describe('CLUE_SOLVER_SYSTEM_PROMPT', () => {
+  it('emphasises bopomofo decoding and does not ask for final guesses', () => {
+    expect(CLUE_SOLVER_SYSTEM_PROMPT).toContain('注音');
+    expect(CLUE_SOLVER_SYSTEM_PROMPT).toContain('不知道謎底');
+    expect(CLUE_SOLVER_SYSTEM_PROMPT).not.toContain('final_guesses');
+  });
+});
+
+describe('FINAL_GUESSER_SYSTEM_PROMPT', () => {
   it('asks for 5 ranked answer candidates', () => {
-    expect(SOLVER_SYSTEM_PROMPT).toContain('5');
-    expect(SOLVER_SYSTEM_PROMPT).toContain('候選');
+    expect(FINAL_GUESSER_SYSTEM_PROMPT).toContain('5');
+    expect(FINAL_GUESSER_SYSTEM_PROMPT).toContain('候選');
+  });
+});
+
+describe('finalGuesserUserPrompt', () => {
+  it('formats deciphered clues without bopomofo', () => {
+    const guesses: PerQuestionGuess[] = [
+      { q: 1, replyGuess: '地面', note: '掉到地上', question: '它會去哪裡？' },
+    ];
+    const prompt = finalGuesserUserPrompt(guesses);
+    expect(prompt).toContain('它會去哪裡？');
+    expect(prompt).toContain('地面');
+    expect(prompt).not.toContain('ㄉ');
   });
 });
 
 describe('solvePuzzle', () => {
-  const REPLY = JSON.stringify({
-    per_question: [{ q: 1, reply_guess: '地面', note: 'n' }],
-    final_guesses: [{ answer: '溜冰鞋', reason: 'r' }],
-    summary: 's',
+  const CLUES_REPLY = JSON.stringify({
+    per_question: [{ q: 1, question: '它會去哪裡？', reply_guess: '地面', note: '掉到地上' }],
+  });
+  const FINAL_REPLY = JSON.stringify({
+    final_guesses: [{ answer: '溜冰鞋', reason: '冰上活動相關' }],
+    summary: '整體思路',
   });
 
-  it('sends the progress text and returns a parsed result', async () => {
-    const backend = new FakeBackend([REPLY]);
-    const result = await solvePuzzle(backend, 'Q1. 它會去哪裡？\nㄉㄧˋㄇㄧㄢˋ。');
+  it('sends progress text to stage 1 and deciphered clues to stage 2', async () => {
+    const qwenBackend = new FakeBackend([CLUES_REPLY]);
+    const llamaBackend = new FakeBackend([FINAL_REPLY]);
+    const result = await solvePuzzle(qwenBackend, llamaBackend, 'Q1. 它會去哪裡？\nㄉㄧˋㄇㄧㄢˋ。');
 
+    expect(result.perQuestion[0].replyGuess).toBe('地面');
     expect(result.finalGuesses[0].answer).toBe('溜冰鞋');
-    const userMsg = backend.calls[0].messages.find((m) => m.role === 'user');
-    expect(userMsg?.content).toContain('ㄉㄧˋㄇㄧㄢˋ。');
+
+    // Stage 1 receives bopomofo
+    const stage1Msg = qwenBackend.calls[0].messages.find((m) => m.role === 'user');
+    expect(stage1Msg?.content).toContain('ㄉㄧˋㄇㄧㄢˋ。');
+
+    // Stage 2 receives deciphered text, NOT bopomofo
+    const stage2Msg = llamaBackend.calls[0].messages.find((m) => m.role === 'user');
+    expect(stage2Msg?.content).toContain('地面');
+    expect(stage2Msg?.content).not.toContain('ㄉㄧˋ');
   });
 
-  it('avoids json_object mode and reasoning_format (thinking appears in content, extractJson handles it)', async () => {
-    const backend = new FakeBackend([REPLY]);
-    await solvePuzzle(backend, 'Q1. 測試？\n（尚未顯示墨水）');
+  it('avoids json_object mode on both stages', async () => {
+    const qwenBackend = new FakeBackend([CLUES_REPLY]);
+    const llamaBackend = new FakeBackend([FINAL_REPLY]);
+    await solvePuzzle(qwenBackend, llamaBackend, 'Q1. 測試？\n（尚未顯示墨水）');
 
-    // No json_object — that strict server-side validation is exactly what
-    // produced json_validate_failed on this reasoning-heavy call.
-    expect(backend.calls[0].responseFormat).toBeUndefined();
-    // No reasoning_format either — with 'hidden', reasoning consumes the
-    // token budget without producing visible output, exhausting the cap
-    // before any JSON appears.
-    expect(backend.calls[0].reasoningFormat).toBeUndefined();
-    // Generous but TPM-safe budget for thinking + visible JSON.
-    expect(backend.calls[0].maxTokens).toBe(4096);
+    // Stage 1 (Qwen, reasoning model) — no json_object, no reasoning_format
+    expect(qwenBackend.calls[0].responseFormat).toBeUndefined();
+    expect(qwenBackend.calls[0].reasoningFormat).toBeUndefined();
+    expect(qwenBackend.calls[0].maxTokens).toBe(4096);
+
+    // Stage 2 (Llama) — no json_object either
+    expect(llamaBackend.calls[0].responseFormat).toBeUndefined();
   });
 
-  it('extracts JSON from a fenced / prose-wrapped reply', async () => {
-    const backend = new FakeBackend(['這是我的分析：\n```json\n' + REPLY + '\n```\n希望有幫助']);
-    const result = await solvePuzzle(backend, 'Q1. 測試？\nㄘˋ');
-    expect(result.finalGuesses[0].answer).toBe('溜冰鞋');
+  it('extracts JSON from a fenced / prose-wrapped stage 1 reply', async () => {
+    const qwenBackend = new FakeBackend(['這是分析：\n```json\n' + CLUES_REPLY + '\n```\n完畢']);
+    const llamaBackend = new FakeBackend([FINAL_REPLY]);
+    const result = await solvePuzzle(qwenBackend, llamaBackend, 'Q1. 測試？\nㄘˋ');
+    expect(result.perQuestion[0].replyGuess).toBe('地面');
   });
 
-  it('throws immediately when the reply is unparseable (no retries)', async () => {
-    const backend = new FakeBackend(['（模型只講了廢話，沒有 JSON）']);
-    await expect(solvePuzzle(backend, 'Q1. 測試？\nㄘˋ')).rejects.toThrow(/無法解析為 JSON/);
-    expect(backend.calls.length).toBe(1);
+  it('throws immediately when stage 1 reply is unparseable', async () => {
+    const qwenBackend = new FakeBackend(['（模型只講了廢話，沒有 JSON）']);
+    const llamaBackend = new FakeBackend(['dummy']);
+    await expect(
+      solvePuzzle(qwenBackend, llamaBackend, 'Q1. 測試？\nㄘˋ'),
+    ).rejects.toThrow(/階段 1/);
+    expect(qwenBackend.calls.length).toBe(1);
   });
 
-  it('throws a clear error on unparseable reply', async () => {
-    const backend = new FakeBackend(['nope']);
-    await expect(solvePuzzle(backend, 'Q1. 測試？\nㄘˋ')).rejects.toThrow(/無法解析為 JSON/);
-  });
+  it('never receives an answer — stage 1 only gets questions and revealed bopomofo', async () => {
+    const qwenBackend = new FakeBackend([CLUES_REPLY]);
+    const llamaBackend = new FakeBackend([FINAL_REPLY]);
+    await solvePuzzle(qwenBackend, llamaBackend, 'Q1. 它是什麼顏色？\nㄏㄟˉ');
 
-  it('never receives an answer — it only gets questions and revealed bopomofo', async () => {
-    const backend = new FakeBackend([REPLY]);
-    await solvePuzzle(backend, 'Q1. 它是什麼顏色？\nㄏㄟˉ');
-    const allContent = backend.calls[0].messages.map((m) => m.content).join('\n');
-    // The system prompt must reinforce that the solver does not know the answer.
+    const allContent = qwenBackend.calls[0].messages.map((m) => m.content).join('\n');
     expect(allContent).toContain('不知道謎底');
   });
 });

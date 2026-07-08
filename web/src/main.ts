@@ -182,14 +182,21 @@ export function renderSolverHelper(root: HTMLElement, initialText = ''): void {
 
     runBtn.disabled = true;
     results.innerHTML = '';
-    status.innerHTML = '<span class="pi-solver-thinking">🤔 分析中…</span>';
+    status.innerHTML = '<span class="pi-solver-thinking">🤔 階段 1/2：解讀線索中⋯⋯（使用 Qwen）</span>';
     try {
-      // Solver uses a non-reasoning model to avoid reasoning tokens consuming
-      // the entire token budget before any visible JSON appears.
-      const solverBackend = settings.backend === 'groq'
+      // Stage 1: Qwen for bopomofo-to-text decoding (strong bopomofo understanding)
+      const qwenBackend = settings.backend === 'groq'
+        ? new GroqBackend(settings.apiKey, 'qwen/qwen3-32b')
+        : buildBackend(settings);
+      // Stage 2: Llama for final answer guessing (avoids reasoning token exhaustion)
+      const llamaBackend = settings.backend === 'groq'
         ? new GroqBackend(settings.apiKey, 'llama-3.3-70b-versatile')
         : buildBackend(settings);
-      const result = await solvePuzzle(solverBackend, text);
+
+      const result = await solvePuzzle(qwenBackend, llamaBackend, text, (stage, msg) => {
+        status.innerHTML = `<span class="pi-solver-thinking">🤔 ${escapeHtml(msg)}</span>`;
+      });
+
       status.textContent = '';
       results.innerHTML = solveResultHtml(result);
     } catch (err) {

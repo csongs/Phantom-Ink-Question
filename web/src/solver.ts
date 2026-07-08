@@ -1,15 +1,18 @@
 // web/src/solver.ts
 //
-// Standalone puzzle-solving helper. Unlike the generator, this NEVER sees the
-// answer — it reasons purely from a pasted progress snapshot (questions plus
-// partially-revealed bopomofo), so it works on any puzzle, including someone
-// else's copied progress.
+// Two-stage puzzle-solving helper.
+// Stage 1 (Qwen): decodes revealed bopomofo into per-question reply text.
+// Stage 2 (Llama): takes the deciphered clues and guesses the final answer.
+// This split avoids the reasoning model's token budget being exhausted by
+// trying to do everything in one call.
 import { extractJson, type LLMBackend } from './backends/shared';
 
 export interface PerQuestionGuess {
   q: number;
   replyGuess: string;
   note: string;
+  /** Question text, populated by stage 1 for use in stage 2. */
+  question?: string;
 }
 
 export interface FinalGuess {
@@ -23,52 +26,95 @@ export interface SolveResult {
   summary: string;
 }
 
-export const SOLVER_SYSTEM_PROMPT = `你是「靈媒遊戲」的解題小幫手。你**不知道謎底**，只能根據玩家提供的線索推理。請全程使用臺灣慣用詞彙。
+// ── Stage 1: Clue solving (uses Qwen — strong bopomofo understanding) ─────
+
+export const CLUE_SOLVER_SYSTEM_PROMPT = `你是「靈媒遊戲」的線索解讀專家。請全程使用臺灣慣用詞彙。
 
 ## 遊戲背景
-- 謎底是一個具體名詞。
+- 謎底是一個具體名詞，但**你不知道謎底是什麼**，你的任務只到「讀出各題回答」為止。
 - 每一題有一個「問題」與一個簡短「回答」（回答不超過六個中文字）。
 - 回答以注音逐格揭露，你看到的是「目前已揭露的注音」。
 - 注音由左到右揭露，未揭露的部分你看不到；「（尚未顯示墨水）」表示這題還沒揭露任何注音。
 - 注音含聲調，同符號不同聲調視為不同（ㄧ 與 ㄧˋ 不同）；句號「。」代表回答結束。
 
-## 關鍵規則（用來幫助推理）
-- **謎底與任何一題的「回答」都不會共用任何中文字。** 例如某題回答是「溜冰」，謎底就不會出現「溜」或「冰」。推測出各題回答後，凡是與這些字重疊的謎底候選都可以直接排除。
-- 回答只是「線索」，不是謎底本身；請透過這些線索間接推理出謎底。
-
 ## 你的任務
-1. **逐題推測**：根據問題與已揭露注音，猜測每一題「回答」最可能是什麼短語。注音只揭露一部分時，給出最合理的推測並說明理由。
-2. **綜合猜謎底**：把所有線索合在一起推理謎底，給 **5 個**候選並依可能性由高到低排序（最可能的排最前），且務必排除與線索回答共用文字的候選。若真的想不到這麼多，至少也要盡量湊到 5 個合理猜測。
+逐題推測每一題「回答」最可能是什麼中文字詞。
+- 根據問題與已揭露注音，給出最合理的推測。
+- 如果注音揭露不完全，請根據前後文合理推測完整詞語。
+- 每題請附上該題的「問題原文」，以便後續解題使用。
 
 ## 輸出 JSON 格式
 {
   "per_question": [
-    {"q": 1, "reply_guess": "推測的回答", "note": "推理說明"}
-  ],
+    {"q": 1, "question": "問題原文", "reply_guess": "推測的回答", "note": "推理說明"}
+  ]
+}`;
+
+export function clueSolverUserPrompt(progressText: string): string {
+  return `以下是目前的解題進度（你看不到謎底，只有問題與已揭露的注音）：
+
+${progressText}
+
+請依系統指示逐題推測回答，並輸出指定的 JSON。`;
+}
+
+// ── Stage 2: Final answer guessing (uses Llama — no reasoning budget issue) ─
+
+export const FINAL_GUESSER_SYSTEM_PROMPT = `你是「靈媒遊戲」的解題專家。請全程使用臺灣慣用詞彙。
+
+## 遊戲背景
+- 謎底是一個具體名詞。
+- 你已取得每題的「問題」與「推測的回答」完整文字。
+- **謎底與任何一題的「回答」都不會共用任何中文字。** 凡是與線索回答文字重疊的謎底候選都可以直接排除。
+
+## 你的任務
+根據以下各題的「問題」與「回答」，綜合推理謎底。
+- 給出 **5 個**候選並依可能性由高到低排序（最可能的排最前）。
+- 務必排除與任何線索回答共用中文字的候選。
+- 若真的想不到這麼多，至少也要盡量湊到 5 個合理猜測。
+
+## 輸出 JSON 格式
+{
   "final_guesses": [
     {"answer": "候選謎底", "reason": "推理依據（含為何不與線索字重複）"}
   ],
   "summary": "整體思路"
 }`;
 
-export function solverUserPrompt(progressText: string): string {
-  return `以下是目前的解題進度（你看不到謎底，只有問題與已揭露的注音）：
+export function finalGuesserUserPrompt(perQuestion: PerQuestionGuess[]): string {
+  const lines = perQuestion
+    .filter((p) => p.replyGuess && p.replyGuess !== '？')
+    .map((p) => {
+      const qText = p.question ? `（${p.question}）` : '';
+      return `Q${p.q} ${qText}\n推測回答：${p.replyGuess}${
+        p.note ? `\n推理：${p.note}` : ''
+      }`;
+    })
+    .join('\n\n');
 
-${progressText}
+  return `以下是已解讀的各題線索（問題＋推測回答）：
 
-請依系統指示逐題推測回答，再綜合猜謎底，並輸出指定的 JSON。`;
+${lines}
+
+請根據以上線索綜合推理謎底，並輸出指定的 JSON。`;
 }
 
-/** Leniently normalize the model's JSON into a SolveResult, tolerating key drift. */
-export function parseSolveResult(raw: any): SolveResult {
-  const perQuestion: PerQuestionGuess[] = Array.isArray(raw?.per_question)
+// ── Parsing helpers ───────────────────────────────
+
+function parseClues(raw: any): PerQuestionGuess[] {
+  return Array.isArray(raw?.per_question)
     ? raw.per_question.map((p: any) => ({
         q: Number(p?.q ?? p?.question ?? p?.question_number ?? 0),
         replyGuess: String(p?.reply_guess ?? p?.guess ?? p?.answer ?? '').trim(),
         note: String(p?.note ?? p?.reason ?? '').trim(),
+        question: p?.question !== undefined && typeof p.question === 'string'
+          ? String(p.question).trim()
+          : undefined,
       }))
     : [];
+}
 
+function parseFinal(raw: any): { finalGuesses: FinalGuess[]; summary: string } {
   const finalGuesses: FinalGuess[] = Array.isArray(raw?.final_guesses)
     ? raw.final_guesses
         .map((f: any) =>
@@ -83,45 +129,101 @@ export function parseSolveResult(raw: any): SolveResult {
     : [];
 
   const summary = String(raw?.summary ?? raw?.reasoning ?? '').trim();
-
-  return { perQuestion, finalGuesses, summary };
+  return { finalGuesses, summary };
 }
 
 /**
- * Analyze a pasted progress snapshot.
+ * Leniently normalize a combined JSON into a SolveResult.
+ * Used by tests; the actual solvePuzzle calls parseClues + parseFinal separately.
+ */
+export function parseSolveResult(raw: any): SolveResult {
+  return {
+    perQuestion: parseClues(raw),
+    ...parseFinal(raw),
+  };
+}
+
+// ── Two-stage orchestration ────────────────────────
+
+/**
+ * Analyze a pasted progress snapshot in two stages:
  *
- * This is the app's heaviest reasoning call (analyse 7 clues, then cross-
- * reference for 5 candidates), which repeatedly tripped Groq's
- * `json_validate_failed` — the STRICT server-side check that `json_object`
- * mode runs on a reasoning model's output. So instead of json_object we let
- * the model reply as text (reasoning_format 'hidden' keeps <think> out of the
- * content, no max_tokens cap so reasoning can finish) and parse the JSON
- * ourselves with the lenient extractJson + a couple of retries. This
- * structurally avoids that 400 and tolerates minor formatting noise.
+ * Stage 1 (stage1Backend, typically Qwen): decodes bopomofo into per-question
+ *   reply text. Qwen's reasoning model is better at understanding bopomofo.
+ *
+ * Stage 2 (stage2Backend, typically Llama): takes the deciphered clues and
+ *   produces 5 ranked谜底 candidates. Llama avoids the reasoning-token
+ *   exhaustion that Qwen would hit if it also had to do this part.
+ *
+ * Neither stage uses json_object mode — instead the model replies as plain
+ * text and we use extractJson + parseClues/parseFinal. This structurally
+ * avoids Groq's strict json_validate_failed error on reasoning models.
  */
 export async function solvePuzzle(
-  backend: LLMBackend,
+  stage1Backend: LLMBackend,
+  stage2Backend: LLMBackend,
   progressText: string,
-  onRawReply?: (raw: string) => void,
+  onProgress?: (stage: 1 | 2, message: string) => void,
+  onRawReply?: (stage: 1 | 2, raw: string) => void,
 ): Promise<SolveResult> {
-  const messages = [
-    { role: 'system' as const, content: SOLVER_SYSTEM_PROMPT },
-    { role: 'user' as const, content: solverUserPrompt(progressText) },
-  ];
+  // ── Stage 1: Decode bopomofo into reply text ──
+  onProgress?.(1, '階段 1/2：解讀線索中⋯⋯（使用 Qwen）');
 
-  const reply = await backend.chat(messages, 0.4, 4096);
-  onRawReply?.(reply);
-  if (!reply || !reply.trim()) {
-    throw new Error('AI 回傳了空白回應，請稍後再試。');
+  const stage1Messages = [
+    { role: 'system' as const, content: CLUE_SOLVER_SYSTEM_PROMPT },
+    { role: 'user' as const, content: clueSolverUserPrompt(progressText) },
+  ];
+  const stage1Reply = await stage1Backend.chat(stage1Messages, 0.4, 4096);
+  onRawReply?.(1, stage1Reply);
+
+  if (!stage1Reply || !stage1Reply.trim()) {
+    throw new Error('階段 1（解讀線索）失敗：AI 回傳了空白回應，請稍後再試。');
   }
+
+  let perQuestion: PerQuestionGuess[];
   try {
-    return parseSolveResult(JSON.parse(extractJson(reply)));
+    perQuestion = parseClues(JSON.parse(extractJson(stage1Reply)));
   } catch (err) {
-    console.error(`[solver] AI raw reply:\n${reply}`);
+    console.error(`[solver/stage1] AI raw reply:\n${stage1Reply}`);
     throw new Error(
-      `AI 回應無法解析為 JSON。原始錯誤：${
+      `階段 1（解讀線索）失敗：AI 回應無法解析。${
         err instanceof Error ? err.message : String(err)
       }`,
     );
   }
+
+  if (perQuestion.length === 0) {
+    throw new Error('階段 1（解讀線索）失敗：AI 未回傳任何有效線索。');
+  }
+
+  // ── Stage 2: Guess the final answer ──
+  onProgress?.(2, '階段 2/2：推測謎底中⋯⋯（使用 Llama）');
+
+  const stage2Messages = [
+    { role: 'system' as const, content: FINAL_GUESSER_SYSTEM_PROMPT },
+    { role: 'user' as const, content: finalGuesserUserPrompt(perQuestion) },
+  ];
+  const stage2Reply = await stage2Backend.chat(stage2Messages, 0.4, 4096);
+  onRawReply?.(2, stage2Reply);
+
+  if (!stage2Reply || !stage2Reply.trim()) {
+    throw new Error('階段 2（推測謎底）失敗：AI 回傳了空白回應，請稍後再試。');
+  }
+
+  let finalGuesses: FinalGuess[];
+  let summary: string;
+  try {
+    const parsed = parseFinal(JSON.parse(extractJson(stage2Reply)));
+    finalGuesses = parsed.finalGuesses;
+    summary = parsed.summary;
+  } catch (err) {
+    console.error(`[solver/stage2] AI raw reply:\n${stage2Reply}`);
+    throw new Error(
+      `階段 2（推測謎底）失敗：AI 回應無法解析。${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+  }
+
+  return { perQuestion, finalGuesses, summary };
 }
