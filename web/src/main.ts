@@ -168,30 +168,40 @@ export function renderSolverHelper(root: HTMLElement, initialText = ''): void {
     }, 1400);
   });
 
+  /** Read a form field by id, or return undefined if the element is missing. */
+  const formVal = (id: string): string | undefined =>
+    (document.getElementById(id) as HTMLInputElement | HTMLSelectElement | null)?.value?.trim() || undefined;
+
   runBtn.addEventListener('click', async () => {
     const text = input.value.trim();
     if (!text) {
       status.textContent = '⚠️ 請先貼上解題進度';
       return;
     }
-    const settings = loadSettings();
-    if (!settings?.apiKey) {
+
+    // Try saved settings first; if none (e.g. opened from settings screen before
+    // clicking "開始遊戲"), read directly from the DOM form as a fallback.
+    const saved = loadSettings();
+    const apiKey = saved?.apiKey || formVal('pi-apikey');
+    if (!apiKey) {
       status.textContent = '⚠️ 尚未設定 API Key，請先到設定畫面設定後再使用。';
       return;
     }
+    const backend = (saved?.backend || formVal('pi-backend') || 'groq') as 'groq' | 'hf';
+    const model = saved?.model || formVal('pi-model') || undefined;
 
     runBtn.disabled = true;
     results.innerHTML = '';
     status.innerHTML = '<span class="pi-solver-thinking">🤔 階段 1/2：解讀線索中⋯⋯（使用 Qwen）</span>';
     try {
       // Stage 1: Qwen for bopomofo-to-text decoding (strong bopomofo understanding)
-      const qwenBackend = settings.backend === 'groq'
-        ? new GroqBackend(settings.apiKey, 'qwen/qwen3-32b')
-        : buildBackend(settings);
+      const qwenBackend = backend === 'groq'
+        ? new GroqBackend(apiKey, 'qwen/qwen3-32b')
+        : new HFBackend(apiKey, model || HF_DEFAULT_MODEL);
       // Stage 2: Llama for final answer guessing (avoids reasoning token exhaustion)
-      const llamaBackend = settings.backend === 'groq'
-        ? new GroqBackend(settings.apiKey, 'llama-3.3-70b-versatile')
-        : buildBackend(settings);
+      const llamaBackend = backend === 'groq'
+        ? new GroqBackend(apiKey, 'llama-3.3-70b-versatile')
+        : new HFBackend(apiKey, model || HF_DEFAULT_MODEL);
 
       const result = await solvePuzzle(qwenBackend, llamaBackend, text, (stage, msg) => {
         status.innerHTML = `<span class="pi-solver-thinking">🤔 ${escapeHtml(msg)}</span>`;
