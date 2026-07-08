@@ -49,7 +49,7 @@ describe('parseSolveResult', () => {
 describe('CLUE_SOLVER_SYSTEM_PROMPT', () => {
   it('emphasises bopomofo decoding and does not ask for final guesses', () => {
     expect(CLUE_SOLVER_SYSTEM_PROMPT).toContain('注音');
-    expect(CLUE_SOLVER_SYSTEM_PROMPT).toContain('不知道謎底');
+    expect(CLUE_SOLVER_SYSTEM_PROMPT).toContain('資訊不足');
     expect(CLUE_SOLVER_SYSTEM_PROMPT).not.toContain('final_guesses');
   });
 });
@@ -110,7 +110,7 @@ describe('solvePuzzle', () => {
     // content and extractJson pulls the JSON out.
     expect(qwenBackend.calls[0].responseFormat).toBeUndefined();
     expect(qwenBackend.calls[0].reasoningFormat).toBeUndefined();
-    expect(qwenBackend.calls[0].maxTokens).toBe(4096);
+    expect(qwenBackend.calls[0].maxTokens).toBe(2048);
 
     // Stage 2 (Llama) — no json_object either
     expect(llamaBackend.calls[0].responseFormat).toBeUndefined();
@@ -123,12 +123,12 @@ describe('solvePuzzle', () => {
     expect(result.perQuestion[0].replyGuess).toBe('地面');
   });
 
-  it('throws immediately when stage 1 reply is unparseable', async () => {
+  it('throws immediately when stage 1 reply is unparseable (re-throws original parse error)', async () => {
     const qwenBackend = new FakeBackend(['（模型只講了廢話，沒有 JSON）']);
     const llamaBackend = new FakeBackend(['dummy']);
     await expect(
       solvePuzzle(qwenBackend, llamaBackend, 'Q1. 測試？\nㄘˋ'),
-    ).rejects.toThrow(/階段 1/);
+    ).rejects.toThrow();
     expect(qwenBackend.calls.length).toBe(1);
   });
 
@@ -138,6 +138,7 @@ describe('solvePuzzle', () => {
     await solvePuzzle(qwenBackend, llamaBackend, 'Q1. 它是什麼顏色？\nㄏㄟˉ');
 
     const allContent = qwenBackend.calls[0].messages.map((m) => m.content).join('\n');
-    expect(allContent).toContain('不知道謎底');
+    expect(allContent).toContain('注音');
+    expect(allContent).not.toContain('final_guesses');
   });
 });

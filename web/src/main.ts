@@ -210,7 +210,7 @@ export function renderSolverHelper(root: HTMLElement, initialText = ''): void {
       status.textContent = '';
       results.innerHTML = solveResultHtml(result);
     } catch (err) {
-      status.textContent = '❌ 分析失敗：' + describeGenerationError(err);
+      status.textContent = '❌ ' + (err instanceof Error ? err.message : String(err));
     } finally {
       runBtn.disabled = false;
     }

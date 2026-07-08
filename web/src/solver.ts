@@ -28,77 +28,26 @@ export interface SolveResult {
 
 // ── Stage 1: Clue solving (uses Qwen — strong bopomofo understanding) ─────
 
-export const CLUE_SOLVER_SYSTEM_PROMPT = `你是「靈媒遊戲」的線索解讀專家。請全程使用臺灣慣用詞彙。
+export const CLUE_SOLVER_SYSTEM_PROMPT = `你是靈媒遊戲的線索解讀專家。目標是根據問題與已揭露注音推測各題回答，最終幫助猜出謎底。
 
-## 最高原則
+## 核心規則
 
-你的目標不是「還原回答」，而是「利用問題＋已揭露注音，推測最有助於後續猜出謎底的回答」。
+1. **先掃全部，再回頭。** 逐題快速看過，資訊不足先標「暫定」，不要卡在單一題反覆思考。每題最多 3 個候選，選最高機率者。
+2. **注音是前綴過濾器。** 只驗證已揭露音節是否與候選前幾字一致，未揭露部分不需驗證。例如 ㄊㄡˊ 可對應「投擲」「頭痛」，不需後續音節已出現。
+3. **注音不符就排除。** 語意再合理但第一音節就不符（如 ㄒㄧㄣㄙㄨ ≠ 金屬聲），直接捨棄。
+4. **不要百分之百確定。** 信心 >50% 就接受，沒有新線索不要重新思考同一題。
+5. **不知道就說不知道。** 無合理候選時輸出「資訊不足」，禁止硬湊。
+6. **區分易混聲母：** ㄙ(s)≠ㄕ(sh)，ㄗ(z)≠ㄓ(zh)，ㄘ(c)≠ㄔ(ch)。
 
-請優先選擇：
-1. 最符合問題語意的回答（這是最重要的）
-2. 最符合目前已揭露注音
-3. 最可能作為靈媒遊戲線索的短語
-4. 能與其他題線索形成一致推論的回答
-
-回答不必完全還原原始文字，只要能合理代表該線索即可。
-
-## 注音解讀規則（輔助用）
-
-### 容易搞混的聲母（嚴格遵守）
-- **ㄙ = s**（平舌，如「思、四、速」），**不是 ㄕ(sh)**！書/樹/時/水都是ㄕ不是ㄙ。
-- **ㄗ = z（資）≠ ㄓ = zh（知）**，**ㄘ = c（雌）≠ ㄔ = ch（吃）**
-
-### 注音發音速查
-聲母：ㄅ=b ㄆ=p ㄇ=m ㄈ=f ㄉ=d ㄊ=t ㄋ=n ㄌ=l ㄍ=g ㄎ=k ㄏ=h
-　　　ㄐ=j ㄑ=q ㄒ=x ㄓ=zh ㄔ=ch ㄕ=sh ㄖ=r ㄗ=z ㄘ=c ㄙ=s
-韻母：ㄚ=a ㄛ=o ㄜ=e ㄝ=ê ㄞ=ai ㄟ=ei ㄠ=ao ㄡ=ou
-　　　ㄢ=an ㄣ=en ㄤ=ang ㄥ=eng ㄦ=er
-結合韻：ㄧ=y/i  ㄨ=w/u  ㄩ=yü/ü
-聲調：ˉ(1) ˊ(2) ˇ(3) ˋ(4) ˙(輕聲)
-
-### 注音僅供排除用
-注音只能用來排除不符的候選，不應凌駕於問題語意。
-符合問題語意，比符合冷門詞更重要。
-
-## 遊戲背景
-- 謎底是一個具體名詞，但**你不知道謎底是什麼**。
-- 回答以注音揭露，你看到的是「目前已揭露的注音」，未揭露部分看不到。
-- 已揭露注音只是開頭，完整的回答可能是雙字詞或三字詞。
-- 注音含聲調，同符號不同聲調視為不同；句號「。」代表回答結束。
-
-## 機率思考（重要）
-若同一段注音可能對應多個詞，請依以下優先順序判斷：
-
-1. **是否符合問題語意**（例如問「摸起來如何」→ 柔軟/粗糙，不會是熱血）
-2. **是否符合常見生活用語**（優先選一般人會說的詞）
-3. **是否能與其他線索共同指向同一個謎底**（整體一致性）
-4. **是否符合目前已揭露注音**（用來排除，不是用來決定）
-
-選擇整體機率最高的回答，而不是列舉所有可能。
-
-## 舉例
-
-**例 1：問題語意優先於注音**
-Q：它摸起來如何？
-注音：ㄖ
-→ 柔軟（不是熱血，雖然熱也符合ㄖ，但問題在問觸感）
-
-**例 2：先看問題再對注音**
-Q：它由什麼做成？
-注音：ㄅ
-→ 玻璃 / 布料（不是冰/爸爸，那些不符合「材料」語意）
-
-**例 3：整體線索一致性**
-Q：它存放在哪？
-注音：ㄐ
-若其他題都指向實驗用品 → 架子（不是教室/監獄）
-
-## 輸出 JSON 格式
+## 輸出格式
 {
   "per_question": [
-    {"q": 1, "question": "問題原文", "reply_guess": "推測的回答", "note": "推理說明"}
+    {"q": 1, "question": "問題原文", "reply_guess": "推測的回答", "confidence": 0.7}
   ]
-}`;
+}
+
+confidence 為 0.0~1.0，低於 0.5 代表資訊不足。
+`;
 
 export function clueSolverUserPrompt(progressText: string): string {
   return `以下是目前的解題進度（你看不到謎底，只有問題與已揭露的注音）：
@@ -226,12 +175,12 @@ export async function solvePuzzle(
   // Stage 1 uses text mode (no json_object, no reasoning_format). Qwen3-32B
   // outputs reasoning text followed by JSON in the content. extractJson pulls
   // the JSON out, structurally avoiding Groq's strict json_validate_failed.
-  // maxTokens=4096 gives enough room for thinking (~3k) + JSON (~1k).
-  const stage1Reply = await stage1Backend.chat(stage1Messages, 0.4, 4096);
+  // maxTokens=2048 + compact system prompt (~200t) + progress text (~1k) = well under Groq 6000 TPM limit.
+  const stage1Reply = await stage1Backend.chat(stage1Messages, 0.4, 2048);
   onRawReply?.(1, stage1Reply);
 
   if (!stage1Reply || !stage1Reply.trim()) {
-    throw new Error('階段 1（解讀線索）失敗：AI 回傳了空白回應，請稍後再試。');
+    throw new Error('Groq API 回傳了空白內容，可能是思考 token 用盡。請稍後再試。');
   }
 
   let perQuestion: PerQuestionGuess[];
@@ -239,11 +188,7 @@ export async function solvePuzzle(
     perQuestion = parseClues(JSON.parse(extractJson(stage1Reply)));
   } catch (err) {
     console.error(`[solver/stage1] AI raw reply:\n${stage1Reply}`);
-    throw new Error(
-      `階段 1（解讀線索）失敗：AI 回應無法解析。${
-        err instanceof Error ? err.message : String(err)
-      }`,
-    );
+    throw err instanceof Error ? err : new Error(String(err));
   }
 
   if (perQuestion.length === 0) {
@@ -261,7 +206,7 @@ export async function solvePuzzle(
   onRawReply?.(2, stage2Reply);
 
   if (!stage2Reply || !stage2Reply.trim()) {
-    throw new Error('階段 2（推測謎底）失敗：AI 回傳了空白回應，請稍後再試。');
+    throw new Error('Groq API 回傳了空白內容，可能是思考 token 用盡。請稍後再試。');
   }
 
   let finalGuesses: FinalGuess[];
@@ -272,11 +217,7 @@ export async function solvePuzzle(
     summary = parsed.summary;
   } catch (err) {
     console.error(`[solver/stage2] AI raw reply:\n${stage2Reply}`);
-    throw new Error(
-      `階段 2（推測謎底）失敗：AI 回應無法解析。${
-        err instanceof Error ? err.message : String(err)
-      }`,
-    );
+    throw err instanceof Error ? err : new Error(String(err));
   }
 
   return { perQuestion, finalGuesses, summary };
