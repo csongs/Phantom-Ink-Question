@@ -196,7 +196,7 @@ export function renderSolverHelper(root: HTMLElement, initialText = ''): void {
     try {
       // Stage 1: Qwen for bopomofo-to-text decoding (strong bopomofo understanding)
       const qwenBackend = backend === 'groq'
-        ? new GroqBackend(apiKey, 'qwen/qwen3-32b')
+        ? new GroqBackend(apiKey, 'qwen/qwen3.6-27b')
         : new HFBackend(apiKey, model || HF_DEFAULT_MODEL);
       // Stage 2: Llama for final answer guessing (avoids reasoning token exhaustion)
       const llamaBackend = backend === 'groq'
