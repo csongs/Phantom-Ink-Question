@@ -264,7 +264,10 @@ export async function solvePuzzle(
     { role: 'system' as const, content: CLUE_SOLVER_SYSTEM_PROMPT },
     { role: 'user' as const, content: clueSolverUserPrompt(progressText) },
   ];
-  const stage1Reply = await stage1Backend.chat(stage1Messages, 0.4, 4096);
+  // Stage 1 uses 'hidden' reasoning_format (Qwen is a reasoning model) so that
+  // the thinking process stays internal and the response content is clean JSON
+  // rather than a mix of reasoning text and the actual answer.
+  const stage1Reply = await stage1Backend.chat(stage1Messages, 0.4, 4096, undefined, 'hidden');
   onRawReply?.(1, stage1Reply);
 
   if (!stage1Reply || !stage1Reply.trim()) {

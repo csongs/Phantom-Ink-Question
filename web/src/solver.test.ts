@@ -100,14 +100,15 @@ describe('solvePuzzle', () => {
     expect(stage2Msg?.content).not.toContain('ㄉㄧˋ');
   });
 
-  it('avoids json_object mode on both stages', async () => {
+  it('avoids json_object on both stages; stage 1 uses hidden reasoning', async () => {
     const qwenBackend = new FakeBackend([CLUES_REPLY]);
     const llamaBackend = new FakeBackend([FINAL_REPLY]);
     await solvePuzzle(qwenBackend, llamaBackend, 'Q1. 測試？\n（尚未顯示墨水）');
 
-    // Stage 1 (Qwen, reasoning model) — no json_object, no reasoning_format
+    // Stage 1 (Qwen, reasoning model) — no json_object, but hidden reasoning_format
+    // so that reasoning stays internal and the content is clean JSON
     expect(qwenBackend.calls[0].responseFormat).toBeUndefined();
-    expect(qwenBackend.calls[0].reasoningFormat).toBeUndefined();
+    expect(qwenBackend.calls[0].reasoningFormat).toBe('hidden');
     expect(qwenBackend.calls[0].maxTokens).toBe(4096);
 
     // Stage 2 (Llama) — no json_object either
