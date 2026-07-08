@@ -194,9 +194,9 @@ export function renderSolverHelper(root: HTMLElement, initialText = ''): void {
     results.innerHTML = '';
     status.innerHTML = '<span class="pi-solver-thinking">🤔 階段 1/2：解讀線索中⋯⋯（使用 Qwen）</span>';
     try {
-      // Stage 1: Qwen for bopomofo-to-text decoding (strong bopomofo understanding)
+      // Stage 1: Qwen3-32B for bopomofo-to-text decoding (stronger Chinese understanding)
       const qwenBackend = backend === 'groq'
-        ? new GroqBackend(apiKey, 'qwen/qwen3.6-27b')
+        ? new GroqBackend(apiKey, 'qwen/qwen3-32b')
         : new HFBackend(apiKey, model || HF_DEFAULT_MODEL);
       // Stage 2: Llama for final answer guessing (avoids reasoning token exhaustion)
       const llamaBackend = backend === 'groq'

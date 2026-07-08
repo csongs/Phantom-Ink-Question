@@ -218,11 +218,11 @@ export async function solvePuzzle(
     { role: 'system' as const, content: CLUE_SOLVER_SYSTEM_PROMPT },
     { role: 'user' as const, content: clueSolverUserPrompt(progressText) },
   ];
-  // Stage 1 uses 'hidden' reasoning_format (Qwen is a reasoning model) so that
-  // the thinking process stays internal and the response content is clean JSON.
-  // With 'hidden', reasoning tokens still count toward max_tokens. The reduced
-  // prompt (~1600 tokens) + max_tokens=6144 stays under Groq's 8000 TPM limit.
-  const stage1Reply = await stage1Backend.chat(stage1Messages, 0.4, 6144, undefined, 'hidden');
+  // Stage 1 uses text mode (no json_object, no reasoning_format). Qwen3-32B
+  // outputs reasoning text followed by JSON in the content. extractJson pulls
+  // the JSON out, structurally avoiding Groq's strict json_validate_failed.
+  // maxTokens=4096 gives enough room for thinking (~3k) + JSON (~1k).
+  const stage1Reply = await stage1Backend.chat(stage1Messages, 0.4, 4096);
   onRawReply?.(1, stage1Reply);
 
   if (!stage1Reply || !stage1Reply.trim()) {
