@@ -109,7 +109,7 @@ describe('solvePuzzle', () => {
     // so that reasoning stays internal and the content is clean JSON
     expect(qwenBackend.calls[0].responseFormat).toBeUndefined();
     expect(qwenBackend.calls[0].reasoningFormat).toBe('hidden');
-    expect(qwenBackend.calls[0].maxTokens).toBe(4096);
+    expect(qwenBackend.calls[0].maxTokens).toBe(8192);
 
     // Stage 2 (Llama) — no json_object either
     expect(llamaBackend.calls[0].responseFormat).toBeUndefined();
