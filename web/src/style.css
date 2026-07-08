@@ -531,7 +531,11 @@ body {
 .pi-question-setup .pi-bank-body { display: none; }
 .pi-question-setup .pi-bank-body.open { display: block; }
 .pi-question-setup .pi-bank-list { max-height: 200px; overflow-y: auto; border: 1px solid #4444; border-radius: 6px; padding: 4px; }
-.pi-question-setup .pi-bank-item { display: block; padding: 2px 4px; cursor: pointer; }
+.pi-question-setup .pi-bank-item { display: flex; align-items: center; gap: 8px; padding: 6px 6px; margin: 0; cursor: pointer; font-size: 13px; color: var(--pi-text); font-weight: 400; line-height: 1.4; border-radius: 4px; }
+.pi-question-setup .pi-bank-item:hover { background: rgba(255,255,255,0.05); }
+/* Reset the checkbox: the generic ".pi-settings-group input { width:100% }" rule
+   would otherwise blow it up into a full-width bordered box on its own line. */
+.pi-question-setup .pi-bank-item input[type="checkbox"] { width: 16px; height: 16px; flex: 0 0 auto; margin: 0; padding: 0; border-radius: 3px; accent-color: var(--pi-green-bright); cursor: pointer; }
 .pi-question-setup .pi-bank-search { width: 100%; margin-bottom: 6px; }
 .pi-question-setup .pi-custom-row { display: flex; gap: 6px; margin-bottom: 4px; }
 .pi-question-setup .pi-custom-input { flex: 1; }
