@@ -13,6 +13,7 @@ import {
 } from './game';
 import { renderQuestionSetup, readQuestionSetup, refreshSetupValidity } from './questionSetup';
 import { solvePuzzle, type SolveResult } from './solver';
+import { buildClueCommands } from './hostCommands';
 
 export function toGameQuestions(
   questions: { question: string; reply: string }[],
@@ -203,7 +204,7 @@ export function renderSolverHelper(root: HTMLElement, initialText = ''): void {
         ? new GroqBackend(apiKey, 'llama-3.3-70b-versatile')
         : new HFBackend(apiKey, model || HF_DEFAULT_MODEL);
 
-      const result = await solvePuzzle(qwenBackend, llamaBackend, text, (stage, msg) => {
+      const result = await solvePuzzle(qwenBackend, llamaBackend, text, (_stage, msg) => {
         status.innerHTML = `<span class="pi-solver-thinking">🤔 ${escapeHtml(msg)}</span>`;
       });
 
@@ -270,8 +271,25 @@ async function startGame(
 
     // Build layout: game container + log section (collapsed)
     const logHtml = logLines.map((l) => `<div class="pi-log-line">${escapeHtml(l)}</div>`).join('');
+    const clueCommands = settings.groupTags?.length
+      ? buildClueCommands(result.questions, settings.groupTags)
+      : [];
+    const hostCmdsHtml = clueCommands.length
+      ? `
+        <div class="pi-host-cmds">
+          <div class="pi-log-header">
+            <div class="pi-host-cmds-toggle pi-log-toggle" tabindex="0" role="button">
+              <span class="pi-log-toggle-arrow">▶</span> 📢 主持指令（${clueCommands.length} 條）
+            </div>
+            <button class="pi-host-cmds-copy pi-log-copy" title="複製全部指令">📋</button>
+          </div>
+          <pre class="pi-host-cmds-body">${escapeHtml(clueCommands.join('\n'))}</pre>
+        </div>`
+      : '';
+
     root.innerHTML = `
       <div id="pi-game-container"></div>
+      ${hostCmdsHtml}
       <div class="pi-log-below">
         <div class="pi-log-header">
           <div class="pi-log-toggle" tabindex="0" role="button">
@@ -306,6 +324,20 @@ async function startGame(
     logSection.querySelector('.pi-log-copy')?.addEventListener('click', () => {
       navigator.clipboard.writeText(logLines.join('\n')).catch(() => {});
     });
+
+    // Host commands: toggle + copy
+    const hostCmds = root.querySelector<HTMLElement>('.pi-host-cmds');
+    if (hostCmds) {
+      const cmdToggle = hostCmds.querySelector<HTMLElement>('.pi-host-cmds-toggle');
+      const cmdBody = hostCmds.querySelector<HTMLElement>('.pi-host-cmds-body');
+      cmdToggle?.addEventListener('click', () => {
+        cmdBody?.classList.toggle('open');
+        cmdToggle.querySelector('.pi-log-toggle-arrow')?.classList.toggle('open');
+      });
+      hostCmds.querySelector('.pi-host-cmds-copy')?.addEventListener('click', () => {
+        navigator.clipboard.writeText(clueCommands.join('\n')).catch(() => {});
+      });
+    }
   } catch (err) {
     const message = describeGenerationError(err);
     const logHtml = logLines.map((l) => `<div class="pi-log-line">${escapeHtml(l)}</div>`).join('');
@@ -374,6 +406,18 @@ export function showSettingsScreen(root: HTMLElement): void {
       <div class="pi-settings-group">
         <label>API Key</label>
         <input id="pi-apikey" type="password" value="${apiKey}" placeholder="貼上你的 API Key">
+        <div class="pi-apikey-help">
+          <span class="pi-apikey-help-toggle" tabindex="0" role="button">▶ 如何申請 Groq API Key？</span>
+          <div class="pi-apikey-help-body">
+            <ol>
+              <li>前往 <a href="https://console.groq.com" target="_blank" rel="noopener">console.groq.com</a>，用 Google 或 GitHub 帳號註冊登入（免費）。</li>
+              <li>點左側選單的「API Keys」。</li>
+              <li>點「Create API Key」，輸入任意名稱後送出。</li>
+              <li>複製產生的 Key（<strong>只會顯示這一次</strong>），貼回上方欄位。</li>
+            </ol>
+            <p>免費方案即可使用、不需信用卡；但有速率限制（每分鐘 token 上限），分析偶爾失敗時稍等再試即可。</p>
+          </div>
+        </div>
       </div>
 
       <div class="pi-settings-group">
@@ -424,6 +468,7 @@ export function showSettingsScreen(root: HTMLElement): void {
       numQuestions: existing?.numQuestions,
       pickedBankQuestions: existing?.pickedBankQuestions,
       customQuestions: existing?.customQuestions,
+      groupTags: existing?.groupTags,
     });
     const startBtn = document.getElementById('pi-start') as HTMLButtonElement | null;
     const syncStart = () => { if (startBtn) startBtn.disabled = !refreshSetupValidity(setupContainer); };
@@ -432,6 +477,12 @@ export function showSettingsScreen(root: HTMLElement): void {
     setupContainer.addEventListener('click', syncStart);
     syncStart();
   }
+
+  // API key help toggle
+  const helpToggle = document.querySelector('.pi-apikey-help-toggle');
+  helpToggle?.addEventListener('click', () => {
+    document.querySelector('.pi-apikey-help')?.classList.toggle('open');
+  });
 
   document.getElementById('pi-start')?.addEventListener('click', () => {
     const backend = (document.getElementById('pi-backend') as HTMLSelectElement).value as 'groq' | 'hf';
@@ -453,6 +504,7 @@ export function showSettingsScreen(root: HTMLElement): void {
       numQuestions: setup.numQuestions,
       pickedBankQuestions: setup.pickedBankQuestions,
       customQuestions: setup.customQuestions,
+      groupTags: setup.groupTags,
     };
     saveSettings(settings);
     void startGame(root, settings, humanAnswer);

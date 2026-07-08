@@ -593,3 +593,31 @@ body {
 .pi-solver-note { font-size: 12px; color: var(--pi-text-dim); margin-top: 2px; }
 .pi-solver-summary { font-size: 13px; color: var(--pi-text); line-height: 1.6; }
 .pi-solver-empty { font-size: 13px; color: var(--pi-text-dim); }
+
+/* ── API key help ── */
+.pi-apikey-help { margin-top: 6px; font-size: 13px; }
+.pi-apikey-help-toggle { cursor: pointer; user-select: none; opacity: 0.8; }
+.pi-apikey-help-toggle:hover { opacity: 1; }
+.pi-apikey-help-body { display: none; margin-top: 6px; line-height: 1.6; }
+.pi-apikey-help.open .pi-apikey-help-body { display: block; }
+.pi-apikey-help-body ol { padding-left: 20px; margin: 4px 0; }
+.pi-apikey-help-body a { color: inherit; text-decoration: underline; }
+
+/* ── Group paste area ── */
+.pi-group-paste-area { margin: 10px 0; }
+.pi-group-paste { width: 100%; box-sizing: border-box; resize: vertical; }
+.pi-group-parse { margin-top: 6px; }
+.pi-group-result { margin-top: 6px; font-size: 13px; line-height: 1.5; opacity: 0.9; }
+
+/* ── Host commands ── */
+.pi-host-cmds { margin-top: 12px; }
+.pi-host-cmds-body {
+  display: none;
+  margin: 6px 0 0;
+  padding: 10px;
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.8;
+  white-space: pre;
+}
+.pi-host-cmds-body.open { display: block; }

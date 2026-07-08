@@ -1,4 +1,6 @@
 
+import type { GroupedQuestion } from './groupPaste';
+
 export interface Settings {
   backend: 'groq' | 'hf';
   apiKey: string;
@@ -9,6 +11,8 @@ export interface Settings {
   numQuestions?: number;
   pickedBankQuestions?: string[];
   customQuestions?: string[];
+  /** (group, index) tags from the paste-parse feature; used for host commands. */
+  groupTags?: GroupedQuestion[];
 }
 
 const STORAGE_KEY = 'phantom-ink-settings';
