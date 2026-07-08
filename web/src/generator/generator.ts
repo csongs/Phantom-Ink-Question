@@ -85,6 +85,7 @@ export class PhantomInkGenerator {
     forced: string[],
     numQuestions: number,
   ): QuestionItem[] {
+    forced = forced.filter((q) => q.trim().length > 0);
     const byQuestion = new Map(aiQuestions.map((q) => [q.question, q]));
     const forcedItems: QuestionItem[] = forced.map((q) => ({
       question: q,
@@ -410,8 +411,8 @@ export class PhantomInkGenerator {
       onProgress,
     } = options;
     const forcedQuestions = [
-      ...(options.pickedBankQuestions ?? []),
-      ...(options.customQuestions ?? []),
+      ...(options.pickedBankQuestions ?? []).filter((q) => q.trim().length > 0),
+      ...(options.customQuestions ?? []).filter((q) => q.trim().length > 0),
     ];
     let answer = options.answer ?? '';
 
