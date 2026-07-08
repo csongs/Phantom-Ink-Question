@@ -184,7 +184,12 @@ export function renderSolverHelper(root: HTMLElement, initialText = ''): void {
     results.innerHTML = '';
     status.innerHTML = '<span class="pi-solver-thinking">🤔 分析中…</span>';
     try {
-      const result = await solvePuzzle(buildBackend(settings), text);
+      // Solver uses a non-reasoning model to avoid reasoning tokens consuming
+      // the entire token budget before any visible JSON appears.
+      const solverBackend = settings.backend === 'groq'
+        ? new GroqBackend(settings.apiKey, 'llama-3.3-70b-versatile')
+        : buildBackend(settings);
+      const result = await solvePuzzle(solverBackend, text);
       status.textContent = '';
       results.innerHTML = solveResultHtml(result);
     } catch (err) {
