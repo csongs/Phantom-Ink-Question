@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { PhantomInkGame, type GameQuestion } from './game';
+import { PhantomInkGame, buildSolverProgressText, type GameQuestion } from './game';
 
 function makeQuestions(): GameQuestion[] {
   return [
@@ -122,5 +122,32 @@ describe('PhantomInkGame', () => {
     expect(game.state.answerBoxOpen).toBe(true);
     game.hideAnswerInput();
     expect(game.state.answerBoxOpen).toBe(false);
+  });
+});
+
+describe('buildSolverProgressText', () => {
+  it('emits seen questions with revealed bopomofo and leaks no answer', () => {
+    const game = new PhantomInkGame(makeQuestions(), '鋼琴');
+    game.revealInk(); // Q1: 1 cell
+    game.revealInk(); // Q1: 2 cells
+    game.nextQuestion(); // visit Q1, move to Q2 (0 revealed)
+
+    const text = buildSolverProgressText(game);
+
+    expect(text).toContain('Q1. Q1\nㄍㄤ');
+    expect(text).toContain('Q2. Q2\n（尚未顯示墨水）');
+    // Blind: the answer must never appear.
+    expect(text).not.toContain('鋼琴');
+    // Only seen questions (Q1, Q2) — not later ones.
+    expect(text).not.toContain('Q3.');
+  });
+
+  it('includes the closing period cell once the reply is fully revealed', () => {
+    const game = new PhantomInkGame(
+      [{ question: 'Q1', reply: '地面。', cells: ['ㄉ', 'ㄧ', 'ˋ', 'ㄇ', 'ㄧ', 'ㄢ', 'ˋ', '。'], total: 8 }],
+      '溜冰鞋',
+    );
+    for (let i = 0; i < 8; i++) game.revealInk();
+    expect(buildSolverProgressText(game)).toBe('Q1. Q1\nㄉㄧˋㄇㄧㄢˋ。');
   });
 });

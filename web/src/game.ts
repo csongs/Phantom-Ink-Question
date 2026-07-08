@@ -207,6 +207,24 @@ export function buildFullShareText(game: PhantomInkGame): string {
   return lines.join('\n');
 }
 
+/**
+ * Build a BLIND solving snapshot for the 解題小幫手: each seen question with its
+ * currently-revealed bopomofo (or a placeholder), and crucially NO answer and
+ * NO reply text. This is the exact paste format the helper consumes.
+ */
+export function buildSolverProgressText(game: PhantomInkGame): string {
+  const s = game.state;
+  const seen = [...new Set([...s.visited, s.currentQ])].sort((a, b) => a - b);
+  return seen
+    .map((i) => {
+      const q = game.questions[i];
+      const revealed = s.revealed[i];
+      const clue = revealed > 0 ? q.cells.slice(0, revealed).join('') : '（尚未顯示墨水）';
+      return `Q${i + 1}. ${q.question}\n${clue}`;
+    })
+    .join('\n\n');
+}
+
 // ── Share preview modal ──────────────────
 
 export function renderSharePreview(root: HTMLElement, text: string): void {
@@ -412,9 +430,12 @@ export function renderGame(
     </div>`;
   }
 
-  // Help button (always visible during game)
+  // Utility bar (always visible during game)
   if (!s.gameOver) {
-    html += `<div class="pi-help-bar"><button class="pi-btn-help" data-action="show-help">📖 規則</button></div>`;
+    html += `<div class="pi-help-bar">
+      <button class="pi-btn-help" data-action="solver">🔍 解題小幫手</button>
+      <button class="pi-btn-help" data-action="show-help">📖 規則</button>
+    </div>`;
   }
 
   container.innerHTML = html;
@@ -468,6 +489,14 @@ export function renderGame(
 
   container.querySelector('[data-action="show-help"]')?.addEventListener('click', () => {
     if (root) showGameRules(root);
+  });
+
+  // Open the standalone solving helper, pre-filled with the current BLIND
+  // progress. Dispatched as an event so game.ts stays free of settings/backend.
+  container.querySelector('[data-action="solver"]')?.addEventListener('click', () => {
+    (root ?? container).dispatchEvent(
+      new CustomEvent('pi-open-solver', { detail: buildSolverProgressText(game), bubbles: true }),
+    );
   });
 
   if (s.answerBoxOpen) {

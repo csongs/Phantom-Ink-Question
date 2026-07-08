@@ -12,6 +12,7 @@ import {
   type GameQuestion,
 } from './game';
 import { renderQuestionSetup, readQuestionSetup, refreshSetupValidity } from './questionSetup';
+import { solvePuzzle, type SolveResult } from './solver';
 
 export function toGameQuestions(
   questions: { question: string; reply: string }[],
@@ -87,6 +88,115 @@ function showRules(root: HTMLElement): void {
   overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
 }
 
+// ── Solving helper (解題小幫手) ──────────────
+//
+// A standalone assistant that reasons from a pasted BLIND progress snapshot.
+// It never receives the answer, so it works on the current game or on progress
+// copied from any other puzzle.
+
+function solveResultHtml(result: SolveResult): string {
+  const perQ = result.perQuestion.length
+    ? `<h4>各題線索推測</h4><ul class="pi-solver-perq">${result.perQuestion
+        .map(
+          (p) =>
+            `<li><span class="pi-solver-q">Q${p.q}</span> → <strong>${escapeHtml(
+              p.replyGuess || '？',
+            )}</strong>${p.note ? `<div class="pi-solver-note">${escapeHtml(p.note)}</div>` : ''}</li>`,
+        )
+        .join('')}</ul>`
+    : '';
+
+  const finals = result.finalGuesses.length
+    ? `<h4>謎底候選（最可能在前）</h4><ol class="pi-solver-finals">${result.finalGuesses
+        .map(
+          (f) =>
+            `<li><strong>${escapeHtml(f.answer)}</strong>${
+              f.reason ? `<div class="pi-solver-note">${escapeHtml(f.reason)}</div>` : ''
+            }</li>`,
+        )
+        .join('')}</ol>`
+    : '<p class="pi-solver-empty">（沒有得到謎底候選，可再多開一些注音後重試）</p>';
+
+  const summary = result.summary
+    ? `<h4>整體思路</h4><p class="pi-solver-summary">${escapeHtml(result.summary)}</p>`
+    : '';
+
+  return perQ + finals + summary;
+}
+
+export function renderSolverHelper(root: HTMLElement, initialText = ''): void {
+  const overlay = document.createElement('div');
+  overlay.className = 'pi-overlay open';
+  overlay.innerHTML = `
+    <div class="pi-dialog pi-solver-dialog">
+      <div class="pi-solver-header">
+        <div class="pi-dialog-title">🔍 解題小幫手</div>
+        <button class="pi-solver-x" data-action="solver-close" aria-label="關閉" title="關閉">✕</button>
+      </div>
+      <div class="pi-solver-hint">貼上解題進度（題目＋已揭露注音），小幫手不會知道謎底，會先推測各題線索、再綜合猜謎底。</div>
+      <textarea class="pi-solver-input" rows="8" placeholder="Q1. 它會造成什麼事故或傷害？&#10;ㄉㄧˋㄇㄧㄢˋ。&#10;&#10;Q2. ...">${escapeHtml(
+        initialText,
+      )}</textarea>
+      <div class="pi-solver-actions">
+        <button class="pi-btn pi-btn-share" data-action="solver-copy">📋 複製</button>
+        <button class="pi-btn pi-btn-answer" data-action="solver-run">🔍 開始分析</button>
+        <button class="pi-btn pi-btn-next" data-action="solver-close">關閉</button>
+      </div>
+      <div class="pi-solver-status"></div>
+      <div class="pi-solver-results"></div>
+    </div>
+  `;
+  root.appendChild(overlay);
+
+  const input = overlay.querySelector<HTMLTextAreaElement>('.pi-solver-input')!;
+  const status = overlay.querySelector<HTMLElement>('.pi-solver-status')!;
+  const results = overlay.querySelector<HTMLElement>('.pi-solver-results')!;
+  const runBtn = overlay.querySelector<HTMLButtonElement>('[data-action="solver-run"]')!;
+
+  // Close only via the ✕ or 關閉 buttons — NOT by clicking the backdrop, so a
+  // stray click outside can't wipe pasted text or analysis results.
+  const close = () => overlay.remove();
+  overlay.querySelectorAll('[data-action="solver-close"]').forEach((btn) => {
+    btn.addEventListener('click', close);
+  });
+
+  overlay.querySelector('[data-action="solver-copy"]')?.addEventListener('click', () => {
+    navigator.clipboard.writeText(input.value).catch(() => {});
+    status.textContent = '✅ 已複製';
+    setTimeout(() => {
+      if (status.textContent === '✅ 已複製') status.textContent = '';
+    }, 1400);
+  });
+
+  runBtn.addEventListener('click', async () => {
+    const text = input.value.trim();
+    if (!text) {
+      status.textContent = '⚠️ 請先貼上解題進度';
+      return;
+    }
+    const settings = loadSettings();
+    if (!settings?.apiKey) {
+      status.textContent = '⚠️ 尚未設定 API Key，請先到設定畫面設定後再使用。';
+      return;
+    }
+
+    runBtn.disabled = true;
+    results.innerHTML = '';
+    status.innerHTML = '<span class="pi-solver-thinking">🤔 分析中…</span>';
+    try {
+      const result = await solvePuzzle(buildBackend(settings), text);
+      status.textContent = '';
+      results.innerHTML = solveResultHtml(result);
+    } catch (err) {
+      status.textContent = '❌ 分析失敗：' + describeGenerationError(err);
+    } finally {
+      runBtn.disabled = false;
+    }
+  });
+
+  input.focus();
+}
+
 // ── Loading screen (log is masked during generation) ──
 
 function renderLoading(root: HTMLElement, statusMsg = ''): void {
@@ -154,6 +264,12 @@ async function startGame(
     // Render game into its container
     const gameContainer = document.getElementById('pi-game-container')!;
     renderGame(gameContainer, game, root);
+
+    // Open the solving helper (pre-filled with current blind progress) when the
+    // in-game button asks for it.
+    root.addEventListener('pi-open-solver', (e) => {
+      renderSolverHelper(root, (e as CustomEvent<string>).detail ?? '');
+    });
 
     // Log toggle
     const logSection = root.querySelector<HTMLElement>('.pi-log-below')!;
@@ -262,6 +378,7 @@ export function showSettingsScreen(root: HTMLElement): void {
 
       <div class="pi-settings-actions">
         <button id="pi-start" class="pi-btn pi-btn-answer">開始遊戲</button>
+        <button id="pi-solver-btn" class="pi-btn pi-btn-finish">🔍 解題小幫手</button>
         <button id="pi-rules-btn" class="pi-btn pi-btn-finish">📖 規則</button>
       </div>
     </div>
@@ -321,6 +438,10 @@ export function showSettingsScreen(root: HTMLElement): void {
 
   document.getElementById('pi-rules-btn')?.addEventListener('click', () => {
     showRules(root);
+  });
+
+  document.getElementById('pi-solver-btn')?.addEventListener('click', () => {
+    renderSolverHelper(root);
   });
 }
 
