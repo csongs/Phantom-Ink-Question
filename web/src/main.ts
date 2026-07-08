@@ -361,7 +361,7 @@ export function showSettingsScreen(root: HTMLElement): void {
 
   root.innerHTML = `
     <div class="pi-settings open">
-      <h2>靈筆跡</h2>
+      <h2>幽靈筆跡</h2>
 
       <div class="pi-settings-group">
         <label>Backend</label>
