@@ -46,7 +46,7 @@ export function validateQuestionSetup(input: QuestionSetupCounts): { ok: boolean
   if (![N, M].every(Number.isInteger) || N < 1 || M < 1) {
     return { ok: false, message: '題數必須是正整數' };
   }
-  if (M <= forced) {
+  if (M < forced) {
     return { ok: false, message: `使用題數量須大於 勾選(${X})+自訂(${C})=${forced}` };
   }
   if (N <= M) {

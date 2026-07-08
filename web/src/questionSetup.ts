@@ -25,9 +25,7 @@ export function renderQuestionSetup(
       }> ${escapeHtml(q)}</label>`,
   ).join('');
 
-  const customRows = (customs.length ? customs : [''])
-    .map((c) => customRowHtml(c))
-    .join('');
+  const customRows = customs.map((c) => customRowHtml(c)).join('');
 
   container.innerHTML = `
     <div class="pi-settings-group pi-question-setup">

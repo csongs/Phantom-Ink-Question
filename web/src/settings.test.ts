@@ -34,10 +34,14 @@ describe('validateQuestionSetup', () => {
     expect(validateQuestionSetup(base)).toEqual({ ok: true });
   });
 
-  it('rejects when used count does not exceed forced (M <= X+C)', () => {
-    const r = validateQuestionSetup({ ...base, numQuestions: 5, pickedCount: 3, customCount: 2 });
+  it('rejects when used count is less than forced (M < X+C)', () => {
+    const r = validateQuestionSetup({ ...base, numQuestions: 4, pickedCount: 3, customCount: 2 });
     expect(r.ok).toBe(false);
     expect(r.message).toContain('使用題數量');
+  });
+
+  it('accepts when used count equals forced (M = X+C)', () => {
+    expect(validateQuestionSetup({ ...base, numQuestions: 5, pickedCount: 3, customCount: 2 }).ok).toBe(true);
   });
 
   it('accepts when used count is exactly one more than forced', () => {
