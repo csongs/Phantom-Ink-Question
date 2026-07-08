@@ -62,16 +62,19 @@ describe('solvePuzzle', () => {
     expect(userMsg?.content).toContain('ㄉㄧˋㄇㄧㄢˋ。');
   });
 
-  it('avoids json_object mode (parses text itself) but uses hidden reasoning and a generous token budget', async () => {
+  it('avoids json_object mode and reasoning_format (thinking appears in content, extractJson handles it)', async () => {
     const backend = new FakeBackend([REPLY]);
     await solvePuzzle(backend, 'Q1. 測試？\n（尚未顯示墨水）');
 
     // No json_object — that strict server-side validation is exactly what
     // produced json_validate_failed on this reasoning-heavy call.
     expect(backend.calls[0].responseFormat).toBeUndefined();
-    expect(backend.calls[0].reasoningFormat).toBe('hidden');
-    // Must give enough room for reasoning tokens so content isn't empty.
-    expect(backend.calls[0].maxTokens).toBe(8192);
+    // No reasoning_format either — with 'hidden', reasoning consumes the
+    // token budget without producing visible output, exhausting the cap
+    // before any JSON appears.
+    expect(backend.calls[0].reasoningFormat).toBeUndefined();
+    // Generous but TPM-safe budget for thinking + visible JSON.
+    expect(backend.calls[0].maxTokens).toBe(4096);
   });
 
   it('extracts JSON from a fenced / prose-wrapped reply', async () => {

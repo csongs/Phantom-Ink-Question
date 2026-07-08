@@ -109,7 +109,7 @@ export async function solvePuzzle(
     { role: 'user' as const, content: solverUserPrompt(progressText) },
   ];
 
-  const reply = await backend.chat(messages, 0.4, 8192, undefined, 'hidden');
+  const reply = await backend.chat(messages, 0.4, 4096);
   onRawReply?.(reply);
   if (!reply || !reply.trim()) {
     throw new Error('AI 回傳了空白回應，請稍後再試。');
