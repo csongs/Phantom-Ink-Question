@@ -64,6 +64,7 @@ export class GroqBackend implements LLMBackend {
     if (responseFormat) body.response_format = responseFormat;
     if (reasoningFormat) body.reasoning_format = reasoningFormat;
 
+    let last429Body = '';
     for (let attempt = 0; attempt <= MAX_429_RETRIES; attempt++) {
       await throttle();
 
@@ -79,6 +80,9 @@ export class GroqBackend implements LLMBackend {
       if (res.ok) {
         const data = await res.json();
         let reply: string = data.choices[0].message.content;
+        if (!reply) {
+          console.error('[Groq] 回傳了空的 content，完整回應：', JSON.stringify(data, null, 2));
+        }
         if (responseFormat?.type === 'json_object') {
           reply = extractJson(reply);
         }
@@ -91,12 +95,12 @@ export class GroqBackend implements LLMBackend {
       }
 
       // 429 rate limit — parse suggested delay and retry
-      const errBody = await res.text();
-      const delay = parseRetryAfter(errBody) ?? 5000 * (attempt + 1);
-      console.warn(`Groq 429 (attempt ${attempt + 1}/${MAX_429_RETRIES}): waiting ${delay}ms`);
+      last429Body = await res.text();
+      const delay = parseRetryAfter(last429Body) ?? 5000 * (attempt + 1);
+      console.warn(`Groq 429 (attempt ${attempt + 1}/${MAX_429_RETRIES}): waiting ${delay}ms — ${last429Body}`);
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
 
-    throw new Error('Groq API: max retries exceeded (429)');
+    throw new Error(`Groq API: 429 rate limit exceeded（已重試 ${MAX_429_RETRIES + 1} 次）。原始回應：${last429Body}`);
   }
 }

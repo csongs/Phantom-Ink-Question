@@ -43,5 +43,5 @@ export function extractJson(text: string): string {
       }
     }
   }
-  return text;
+  return '';
 }

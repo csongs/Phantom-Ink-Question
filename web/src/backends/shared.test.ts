@@ -18,7 +18,7 @@ describe('extractJson', () => {
     expect(extractJson(text)).toBe('{"a": {"b": 1}}');
   });
 
-  it('returns the original text unchanged if no JSON object is found', () => {
-    expect(extractJson('no json here')).toBe('no json here');
+  it('returns empty string if no JSON object is found', () => {
+    expect(extractJson('no json here')).toBe('');
   });
 });
