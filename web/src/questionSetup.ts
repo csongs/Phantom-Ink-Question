@@ -46,6 +46,7 @@ export function renderQuestionSetup(
       <div class="pi-bank-header">
         <span class="pi-bank-toggle" tabindex="0" role="button">▶ 從題庫挑題（勾選=強制使用）</span>
         <span class="pi-bank-count"></span>
+        <button type="button" class="pi-bank-clear" style="display:none">清除</button>
       </div>
       <div class="pi-bank-body">
         <input class="pi-bank-search" type="text" placeholder="🔍 搜尋題目...">
@@ -113,7 +114,16 @@ function wire(container: HTMLElement): void {
     }
   });
 
-  // Group paste parse button
+  // Clear all bank selections
+  container.querySelector('.pi-bank-clear')?.addEventListener('click', () => {
+    container.querySelectorAll<HTMLInputElement>('.pi-bank-item input').forEach((cb) => {
+      cb.checked = false;
+    });
+    container.querySelector('.pi-custom-list')!.innerHTML = '';
+    delete container.dataset.groupTags;
+    updateBankCount(container);
+    revalidate();
+  });
   container.querySelector('.pi-group-parse')?.addEventListener('click', () => {
     const ta = container.querySelector<HTMLTextAreaElement>('.pi-group-paste')!;
     const resultEl = container.querySelector<HTMLElement>('.pi-group-result')!;
@@ -167,6 +177,8 @@ function updateBankCount(container: HTMLElement): void {
   const n = container.querySelectorAll<HTMLInputElement>('.pi-bank-item input:checked').length;
   const el = container.querySelector('.pi-bank-count');
   if (el) el.textContent = `已選 ${n}`;
+  const clearBtn = container.querySelector<HTMLElement>('.pi-bank-clear');
+  if (clearBtn) clearBtn.style.display = n > 0 ? '' : 'none';
 }
 
 export function readQuestionSetup(container: HTMLElement): QuestionSetupValue {
