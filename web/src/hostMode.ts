@@ -42,8 +42,12 @@ interface HostPageState {
 /** Two large buttons for host vs player mode. */
 export function renderHostModeSelection(root: HTMLElement, onMode: (mode: 'host' | 'player') => void): void {
   const existing = loadSettings();
+  // Only mark a card "selected" when mode is explicitly set. With no mode yet
+  // (first-time visitor, or just cleared via 切換模式) both buttons should look
+  // equally clickable — otherwise the player card looks pre-selected and the
+  // host card looks disabled, which misleads new users into tapping player.
   const hostSelected = existing?.mode === 'host';
-  const playerSelected = existing?.mode === 'player' || !existing?.mode;
+  const playerSelected = existing?.mode === 'player';
   root.innerHTML = `
     <div class="pi-settings open" style="text-align:center;">
       <h2 style="margin-bottom:8px;">幽靈筆跡 👻</h2>
