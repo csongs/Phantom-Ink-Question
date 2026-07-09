@@ -609,6 +609,13 @@ body {
 .pi-group-parse { margin-top: 6px; }
 .pi-group-result { margin-top: 6px; font-size: 13px; line-height: 1.5; opacity: 0.9; }
 
+/* ── Bopomofo converter ── */
+.pi-bpmf-tool { margin: 10px 0; }
+.pi-bpmf-input { width: 100%; box-sizing: border-box; resize: vertical; }
+.pi-bpmf-convert { margin-top: 6px; }
+.pi-bpmf-output { margin-top: 6px; font-size: 13px; line-height: 1.6; }
+.pi-bpmf-result { font-family: 'Consolas', 'Courier New', monospace; color: var(--pi-green-bright); word-break: break-all; }
+
 /* ── Host commands ── */
 .pi-host-cmds { margin-top: 12px; }
 .pi-host-cmds-body {
