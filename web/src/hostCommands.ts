@@ -3,7 +3,13 @@
 // BOT clue command builder — the single source of truth for the
 // `/ghostink clue 題目id:... 題組:... 選項:... 注音:...` format.
 // If the BOT changes the parameter syntax, only this file needs updating.
+//
+// R8: normalizeQuestion (from groupPaste) is the single normalization used for
+// bank matching. The local `normalize()` here stripped only ONE trailing ？
+// (`[？?]$`), so a question like "真的嗎？？" failed to match and silently
+// dropped its clue command — now gone.
 import { toBopomofoCells } from './bopomofo';
+import { normalizeQuestion } from './groupPaste';
 
 export interface ClueParams {
   /** Command prefix without leading slash, e.g. 'ghostink' or 'phantomink'. */
@@ -37,12 +43,12 @@ export function buildClueCommands(
   prefix = 'ghostink',
 ): string[] {
   const tagByNorm = new Map(
-    tags.map((t) => [normalize(t.text), { group: t.group, option: t.index }]),
+    tags.map((t) => [normalizeQuestion(t.text), { group: t.group, option: t.index }]),
   );
 
   const rows: { group: number; option: number; zhuyin: string }[] = [];
   for (const q of questions) {
-    const tag = tagByNorm.get(normalize(q.question));
+    const tag = tagByNorm.get(normalizeQuestion(q.question));
     if (!tag) continue;
     const zhuyin = toBopomofoCells(q.reply).join('');
     if (!zhuyin) continue;
@@ -54,9 +60,4 @@ export function buildClueCommands(
   return rows.map((r) =>
     buildClueCommand({ prefix, questionId, group: r.group, option: r.option, zhuyin: r.zhuyin }),
   );
-}
-
-/** Lightweight question-text normalizer (matches groupPaste's normalizeQuestion). */
-function normalize(text: string): string {
-  return text.replace(/[\s　]+/g, '').replace(/[？?]$/, '').trim();
 }

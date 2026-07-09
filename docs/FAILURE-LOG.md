@@ -21,6 +21,14 @@
 
 ## 紀錄（新的在上面）
 
+### FL-8｜2026-07-09｜`regenerateReply` 缺 CODE 硬擋,UI 直接採用不合格回答（重演 FL-1）
+- **症狀**：在 Host 模式指令頁按「🔄 再生一個」,LLM 回覆可能超過 6 中文字、含謎底字、空字串、或與其他題目前採用的回答重複——UI 直接採用、複製時把不合格回答送給 BOT。
+- **根因**：`web/src/generator/generator.ts` 的 `regenerateReply()` 原本只在 prompt 裡要求規則、回傳前沒有任何檢查,且 `opts.avoid` / `opts.rejected` 參數完全沒實作。這正是 `docs/QUESTION-QUALITY.md` 原則 5 明令「CODE 硬擋」的情境,卻在剛加的功能裡被略過。發現於 host-mode Phase 3 review R4。
+- **錯誤做法**：相信 LLM 自己會遵守 prompt 規則;覺得「只是單題重生,品質差不多就好」。
+- **正確修法**：簽名改為 `regenerateReply(answer, question, opts: { avoid?: string[]; rejected?: string[] })`;prompt 帶入 avoid/rejected 提示;回傳前依設計題同樣的 4 條規則硬擋（≤6 字、非空、不含謎底字、不在 avoid 中）;不合格自動重試,總計 ≤ 3 次;仍不合格 throw 帶原因的 Error。呼叫端（hostMode.ts）傳 `avoid = 其他卡片現用回答`、`rejected = [被換掉的回答]`,catch 時把 `err.message` 顯示在卡片上。
+- **現行防護**：`generator.ts` 的 `regenerateReply` 內部 retry+硬擋;`generator.test.ts` 新增 5 個 R4 測試（avoid/rejected 進 prompt、超長 retry、3 fail throw、洩漏謎底字 retry、avoid 重複 retry）。CLAUDE.md 硬規則 5「可程式判定的品質規則用 CODE 硬擋,不交給 AI 驗題」。
+- **關鍵字**：regenerateReply, 硬擋, 6 字, 洩漏謎底, avoid, rejected, host mode, 重生
+
 ### FL-7｜2026-07-09｜工具鏈對 CJK 檔案的編碼陷阱（Edit 失敗、print 炸掉）
 - **症狀**：(a) 對含 CJK regex 的 TypeScript 檔用 Edit 工具，old_string 看起來一模一樣卻 match 失敗；(b) Windows 終端跑 python `print()` 中文時 `UnicodeEncodeError: 'cp950' codec can't encode`。
 - **根因**：(a) 工具鏈在顯示/傳輸層會做 unicode 正規化（`\uXXXX` 跳脫與實際字元互換），模型「看到」的內容與檔案實際位元組不一致；(b) Windows 舊終端預設 cp950 編碼，print 非 BIG5 相容字元會炸。

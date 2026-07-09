@@ -2,6 +2,15 @@
 //
 // Host-mode (出題者) setup page and command-card page. Rendered by main.ts
 // when settings.mode === 'host'.
+//
+// R3/R5/R6 architecture:
+// - Single source of truth: cards[i].tag is always the current value
+//   (parse-paste or user-typed); never re-read from DOM.
+// - Event delegation: one click + one input listener per page, dispatched
+//   by class. No re-attach after innerHTML re-render.
+// - Local updates: editing a card updates only that card's cmd-line/reply/bpmf;
+//   editing questionId/prefix updates all cmd-line-X in place. focus is never
+//   moved by our code.
 import { escapeHtml } from './game';
 import { loadSettings, saveSettings, type Settings } from './settings';
 import { parseGroupedQuestions, matchToBank, normalizeQuestion } from './groupPaste';
@@ -19,6 +28,13 @@ interface HostCard {
   question: string;
   tag: { group: number; option: number } | null;
   reply: string;
+  /** R1b — previous reply (if any) for the "↩ 還原上一個" button. */
+  previousReply?: string;
+}
+
+interface HostPageState {
+  questionId: string;
+  prefix: string;
 }
 
 // ── Mode selection screen ──
@@ -55,14 +71,29 @@ export function renderHostModeSelection(root: HTMLElement, onMode: (mode: 'host'
   });
 }
 
+/** Click to clear `settings.mode` and reload — the only path that resets the mode. */
+function clearModeAndReload(): void {
+  const s = loadSettings();
+  if (s) {
+    s.mode = undefined;
+    saveSettings(s);
+  }
+  window.location.reload();
+}
+
 // ── Setup screen ──
 
 /**
- * Render the host-mode setup screen (simplified: no N/M, no bank picker,
- * no host commands section — just API key, answer source, group paste area,
- * questionId, and cmd prefix).
+ * Render the host-mode setup screen (simplified: no N/M, no bank picker).
+ * `pasteText` (optional) pre-fills the group-paste textarea — used by R7 to
+ * restore the user's last paste when they hit "🔄 重新生成整組" on the
+ * command page.
  */
-export function renderHostSetup(root: HTMLElement, existing: Settings | null): void {
+export function renderHostSetup(
+  root: HTMLElement,
+  existing: Settings | null,
+  pasteText?: string,
+): void {
   const apiKey = escapeHtml(existing?.apiKey ?? '');
   const model = escapeHtml(existing?.model ?? '');
   const answerMode = existing?.answerMode ?? 'ai';
@@ -72,10 +103,17 @@ export function renderHostSetup(root: HTMLElement, existing: Settings | null): v
   const aiChecked = answerMode === 'ai' ? 'checked' : '';
   const humanChecked = answerMode === 'human' ? 'checked' : '';
   const humanVisible = answerMode === 'human' ? 'style="display:block"' : 'style="display:none"';
+  // R7: prefer the paste passed in (regen-all → same session); otherwise
+  // rebuild from saved groupTags so the textarea is never blank after a regen.
+  const initialPaste = pasteText
+    ?? (existing?.groupTags && existing.groupTags.length > 0
+      ? rebuildPasteText(existing.groupTags)
+      : '');
 
   root.innerHTML = `
     <div class="pi-settings open">
-      <div style="text-align:right;font-size:12px;margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;margin-bottom:12px;">
+        <a href="#" id="pi-host-back" style="color:var(--pi-text-dim);text-decoration:none;">← 返回設定</a>
         <a href="#" id="pi-switch-mode" style="color:var(--pi-text-dim);text-decoration:none;">⇄ 切換模式</a>
       </div>
 
@@ -139,35 +177,21 @@ export function renderHostSetup(root: HTMLElement, existing: Settings | null): v
 
       <div class="pi-settings-actions">
         <button id="pi-host-generate" class="pi-btn pi-btn-answer" disabled>🎙️ 生成題組</button>
-        <button id="pi-host-back" class="pi-btn pi-btn-finish">← 返回</button>
       </div>
     </div>
   `;
 
-  // Toggle human answer
-  root.querySelectorAll<HTMLInputElement>('input[name="answer-mode"]').forEach((radio) => {
-    radio.addEventListener('change', () => {
-      const area = document.getElementById('pi-human-answer-area');
-      if (area) area.style.display = radio.value === 'human' ? 'block' : 'none';
-    });
-  });
-
-  // Toggle custom prefix field
-  const prefixSelect = document.getElementById('pi-cmd-prefix') as HTMLSelectElement | null;
-  const prefixCustom = document.getElementById('pi-cmd-prefix-custom') as HTMLInputElement | null;
-  prefixSelect?.addEventListener('change', () => {
-    if (prefixCustom) {
-      prefixCustom.style.display = prefixSelect.value === '__custom__' ? 'block' : 'none';
-    }
-  });
-
-  // Parse paste area as user types
-  const pasteArea = document.getElementById('pi-host-paste') as HTMLTextAreaElement | null;
-  const statusEl = document.getElementById('pi-host-parse-status');
-  const resultEl = document.getElementById('pi-host-parse-result');
-  const genBtn = document.getElementById('pi-host-generate') as HTMLButtonElement | null;
+  // Pre-fill paste (R7) BEFORE wiring updateParseStatus so the initial status reflects it.
+  if (initialPaste) {
+    const pasteArea = document.getElementById('pi-host-paste') as HTMLTextAreaElement | null;
+    if (pasteArea) pasteArea.value = initialPaste;
+  }
 
   function updateParseStatus() {
+    const pasteArea = document.getElementById('pi-host-paste') as HTMLTextAreaElement | null;
+    const statusEl = document.getElementById('pi-host-parse-status');
+    const resultEl = document.getElementById('pi-host-parse-result');
+    const genBtn = document.getElementById('pi-host-generate') as HTMLButtonElement | null;
     if (!pasteArea || !statusEl || !resultEl || !genBtn) return;
     const raw = pasteArea.value.trim();
     if (!raw) {
@@ -191,31 +215,34 @@ export function renderHostSetup(root: HTMLElement, existing: Settings | null): v
     genBtn.disabled = total === 0;
   }
 
-  pasteArea?.addEventListener('input', updateParseStatus);
-  updateParseStatus();
-
-  // Generate button
-  genBtn?.addEventListener('click', () => startHostGeneration(root));
-
-  // Switch mode link — clear mode and reload to mode selection
-  document.getElementById('pi-switch-mode')?.addEventListener('click', (e) => {
-    e.preventDefault();
-    const s = loadSettings();
-    if (s) {
-      s.mode = undefined;
-      saveSettings(s);
-    }
-    window.location.reload();
+  // Delegated handlers — never re-attached after innerHTML changes.
+  document.querySelectorAll<HTMLInputElement>('input[name="answer-mode"]').forEach((radio) => {
+    radio.addEventListener('change', () => {
+      const area = document.getElementById('pi-human-answer-area');
+      if (area) area.style.display = radio.value === 'human' ? 'block' : 'none';
+    });
   });
 
-  // Back button
-  document.getElementById('pi-host-back')?.addEventListener('click', () => {
-    const s = loadSettings();
-    if (s) {
-      s.mode = undefined;
-      saveSettings(s);
-    }
-    window.location.reload();
+  const prefixSelect = document.getElementById('pi-cmd-prefix') as HTMLSelectElement | null;
+  const prefixCustom = document.getElementById('pi-cmd-prefix-custom') as HTMLInputElement | null;
+  prefixSelect?.addEventListener('change', () => {
+    if (prefixCustom) prefixCustom.style.display = prefixSelect.value === '__custom__' ? 'block' : 'none';
+  });
+
+  document.getElementById('pi-host-paste')?.addEventListener('input', updateParseStatus);
+  updateParseStatus();
+
+  document.getElementById('pi-host-generate')?.addEventListener('click', () => startHostGeneration(root));
+  document.getElementById('pi-switch-mode')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    clearModeAndReload();
+  });
+  // 「← 返回設定」 in hostSetup itself: the only "back" here would be to the
+  // mode-selection screen. Same intent as the mode switch — but this entry
+  // point is named to match the convention. (Caller is in the same mode.)
+  document.getElementById('pi-host-back')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    clearModeAndReload();
   });
 }
 
@@ -238,18 +265,16 @@ async function startHostGeneration(root: HTMLElement): Promise<void> {
   }
   if (!hostQuestionId) {
     const qidInput = document.getElementById('pi-host-qid');
-    if (qidInput) { qidInput.style.borderColor = 'var(--pi-danger)'; }
+    if (qidInput) qidInput.style.borderColor = 'var(--pi-danger)';
     return;
   }
 
-  // Resolve prefix
   const prefixSelect = document.getElementById('pi-cmd-prefix') as HTMLSelectElement | null;
   let cmdPrefix = prefixSelect?.value ?? 'ghostink';
   if (cmdPrefix === '__custom__') {
     cmdPrefix = (document.getElementById('pi-cmd-prefix-custom') as HTMLInputElement)?.value.trim() || 'ghostink';
   }
 
-  // Parse paste
   const parsed = parseGroupedQuestions(rawPaste);
   if (parsed.items.length === 0) return;
 
@@ -257,7 +282,6 @@ async function startHostGeneration(root: HTMLElement): Promise<void> {
   const pickedBankQuestions = matched.matched.map((m) => m.bankQuestion);
   const customQuestions = matched.unmatched.map((m) => m.text);
 
-  // Save settings for next visit
   const settings: Settings = {
     backend, apiKey, model,
     answerMode, humanAnswer,
@@ -270,7 +294,6 @@ async function startHostGeneration(root: HTMLElement): Promise<void> {
   };
   saveSettings(settings);
 
-  // Show loading
   const logLines: string[] = [];
   const progressLog = (msg: string) => {
     logLines.push(msg);
@@ -289,7 +312,6 @@ async function startHostGeneration(root: HTMLElement): Promise<void> {
     `;
   };
 
-  // Build backend and generate
   const llm: LLMBackend = backend === 'groq'
     ? new GroqFallbackBackend(apiKey, GroqFallbackBackend.withPreferred(model || undefined, 'generator'), { onEvent: progressLog })
     : new HFBackend(apiKey, model || HF_DEFAULT_MODEL);
@@ -310,7 +332,7 @@ async function startHostGeneration(root: HTMLElement): Promise<void> {
     }
     const usedModel = llm.lastUsedModel;
     if (usedModel) progressLog(`🤖 本次由 ${usedModel} 完成`);
-    renderHostCommands(root, result.questions, result.answer, hostQuestionId, cmdPrefix, parsed.items, usedModel, llm);
+    renderHostCommands(root, result.questions, result.answer, hostQuestionId, cmdPrefix, parsed.items, usedModel, llm, rawPaste);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     logLines.push(`❌ ${msg}`);
@@ -325,15 +347,74 @@ async function startHostGeneration(root: HTMLElement): Promise<void> {
         <div class="pi-log-body open">${logLines.map((l) => `<div class="pi-log-line">${escapeHtml(l)}</div>`).join('')}</div>
       </div>
     `;
-    document.getElementById('pi-host-retry')?.addEventListener('click', () => renderHostSetup(root, loadSettings()));
-    document.getElementById('pi-host-back')?.addEventListener('click', () => renderHostSetup(root, loadSettings()));
+    document.getElementById('pi-host-retry')?.addEventListener('click', () => renderHostSetup(root, loadSettings(), rawPaste));
+    document.getElementById('pi-host-back')?.addEventListener('click', () => renderHostSetup(root, loadSettings(), rawPaste));
   }
 }
 
 // ── Command cards page ──
 
-function getPrefixLabel(prefix: string): string {
-  return prefix || 'ghostink';
+function resolveCmdLine(card: HostCard, state: HostPageState): string {
+  const bpmf = toBopomofoCells(card.reply).join('');
+  if (!bpmf) return '';
+  const g = card.tag?.group ?? 0;
+  const o = card.tag?.option ?? 0;
+  if (g <= 0 || o <= 0) return '';
+  return buildClueCommand({ prefix: state.prefix, questionId: state.questionId, group: g, option: o, zhuyin: bpmf });
+}
+
+function renderCardHtml(card: HostCard, qIdx: number, state: HostPageState): string {
+  const qLabel = card.tag
+    ? `Q（題組 ${card.tag.group}・選項 ${card.tag.option}）`
+    : 'Q（⚠️ 無題組編號）';
+  const bpmf = toBopomofoCells(card.reply).join('');
+
+  // Tag input — value reflects cards[idx].tag. When null/unset, value="".
+  const groupVal = card.tag?.group ?? '';
+  const optionVal = card.tag?.option ?? '';
+  const tagStyleColor = card.tag ? 'var(--pi-text-faint)' : 'var(--pi-danger)';
+  const tagHtml = `
+    <span style="font-size:11px;color:${tagStyleColor};">
+      題組: <input class="pi-host-edit-group" data-idx="${qIdx}" type="number" value="${groupVal}" style="width:48px;">
+      選項: <input class="pi-host-edit-option" data-idx="${qIdx}" type="number" value="${optionVal}" style="width:48px;">
+    </span>`;
+
+  const regenerateBtn = `<button class="pi-host-regenerate-one" data-idx="${qIdx}" data-question="${escapeHtml(card.question)}" style="background:none;border:1px solid var(--pi-border);border-radius:4px;color:var(--pi-text-dim);cursor:pointer;padding:2px 8px;font-size:11px;">🔄 再生一個</button>`;
+  const restoreBtn = card.previousReply
+    ? `<button class="pi-host-restore-one" data-idx="${qIdx}" style="background:none;border:1px solid var(--pi-border);border-radius:4px;color:var(--pi-text-dim);cursor:pointer;padding:2px 8px;font-size:11px;">↩ 還原上一個</button>`
+    : '';
+
+  if (!bpmf) {
+    return `<div class="pi-q-card" style="opacity:0.6;">
+      <div class="pi-q-num">${qLabel}</div>
+      <div class="pi-q-text">${escapeHtml(card.question)}</div>
+      <div style="color:var(--pi-text-faint);font-size:12px;">⚠️ 此回答無法轉注音</div>
+      ${tagHtml}
+      <div class="pi-host-cmd-line-${qIdx}" data-cmd-line="${qIdx}"></div>
+    </div>`;
+  }
+
+  const cmd = resolveCmdLine(card, state);
+  const cmdLine = cmd
+    ? `<div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-family:Consolas,monospace;font-size:12px;background:var(--pi-surface);padding:6px 8px;border-radius:4px;word-break:break-all;">
+        <span style="flex:1;color:var(--pi-green-bright);">${escapeHtml(cmd)}</span>
+        <button class="pi-host-copy-cmd" data-cmd="${escapeHtml(cmd)}" style="flex-shrink:0;background:none;border:1px solid var(--pi-border);border-radius:4px;color:var(--pi-text-dim);cursor:pointer;padding:2px 8px;font-size:12px;">📋</button>
+      </div>`
+    : '<div style="color:var(--pi-danger);font-size:12px;margin-top:4px;">請補題組/選項編號</div>';
+
+  const errorSlot = `<div class="pi-host-error-slot-${qIdx}" style="color:var(--pi-danger);font-size:12px;margin-top:4px;"></div>`;
+
+  return `<div class="pi-q-card" data-card-idx="${qIdx}">
+    <div class="pi-q-num">${qLabel}</div>
+    <div class="pi-q-text">${escapeHtml(card.question)}</div>
+    ${tagHtml}
+    <div style="margin-top:6px;font-size:12px;color:var(--pi-text-dim);">
+      回答：<span class="pi-host-reply-text-${qIdx}">${escapeHtml(card.reply)}</span>　注音：<strong class="pi-host-bpmf-text-${qIdx}" style="color:var(--pi-green-bright);font-family:Consolas,monospace;">${bpmf}</strong>
+      <span style="margin-left:8px;">${regenerateBtn}${restoreBtn}</span>
+    </div>
+    <div class="pi-host-cmd-line-${qIdx}" data-cmd-line="${qIdx}">${cmdLine}</div>
+    ${errorSlot}
+  </div>`;
 }
 
 export function renderHostCommands(
@@ -345,135 +426,56 @@ export function renderHostCommands(
   tags: { group: number; index: number; text: string }[],
   usedModel?: string,
   llm?: LLMBackend,
+  /** R7 — paste text to restore if the user later clicks 重新生成整組. */
+  pasteText?: string,
 ): void {
-  // Build cards from the intersection of generated questions and tags.
   const tagByNorm = new Map(tags.map((t) => [normalizeQuestion(t.text), t]));
   const cards: HostCard[] = questions.map((q) => {
     const tag = tagByNorm.get(normalizeQuestion(q.question)) ?? null;
     return { question: q.question, tag: tag ? { group: tag.group, option: tag.index } : null, reply: q.reply };
   });
 
-  const cmdPrefix = getPrefixLabel(prefix);
+  const initialPrefix = prefix || 'ghostink';
+  const state: HostPageState = { questionId, prefix: initialPrefix };
 
-  function renderCardHtml(card: HostCard, qIdx: number, currentQid: string, currentPrefix: string): string {
-    const qLabel = card.tag
-      ? `Q（題組 ${card.tag.group}・選項 ${card.tag.option}）`
-      : 'Q（⚠️ 無題組編號）';
-    const bpmf = toBopomofoCells(card.reply).join('');
-    const tagHtml = card.tag
-      ? `
-        <span style="font-size:11px;color:var(--pi-text-faint);">
-          題組: <input class="pi-host-edit-group" data-idx="${qIdx}" type="number" value="${card.tag.group}" style="width:48px;">
-          選項: <input class="pi-host-edit-option" data-idx="${qIdx}" type="number" value="${card.tag.option}" style="width:48px;">
-        </span>`
-      : `
-        <span style="font-size:11px;color:var(--pi-danger);">
-          題組: <input class="pi-host-edit-group" data-idx="${qIdx}" type="number" value="" style="width:48px;" placeholder="?">
-          選項: <input class="pi-host-edit-option" data-idx="${qIdx}" type="number" value="" style="width:48px;" placeholder="?">
-        </span>`;
+  function renderCards() {
+    const cardsContainer = document.getElementById('pi-host-cards');
+    if (!cardsContainer) return;
+    cardsContainer.innerHTML = cards.map((c, i) => renderCardHtml(c, i, state)).join('');
+  }
 
-    const regenerateBtn = llm
-      ? `<button class="pi-host-regenerate-one" data-idx="${qIdx}" data-question="${escapeHtml(card.question)}" style="background:none;border:1px solid var(--pi-border);border-radius:4px;color:var(--pi-text-dim);cursor:pointer;padding:2px 8px;font-size:11px;">🔄 再生一個</button>`
-      : '';
-
-    if (!bpmf) {
-      return `<div class="pi-q-card" style="opacity:0.6;">
-        <div class="pi-q-num">${qLabel}</div>
-        <div class="pi-q-text">${escapeHtml(card.question)}</div>
-        <div style="color:var(--pi-text-faint);font-size:12px;">⚠️ 此回答無法轉注音</div>
-        ${tagHtml}
-      </div>`;
-    }
-
-    // Determine if tag is valid for command generation
-    const effectiveGroup = getEffectiveGroup(qIdx);
-    const effectiveOption = getEffectiveOption(qIdx);
-    const hasValidTag = effectiveGroup > 0 && effectiveOption > 0;
-
-    const cmd = hasValidTag
-      ? buildClueCommand({ prefix: currentPrefix, questionId: currentQid, group: effectiveGroup, option: effectiveOption, zhuyin: bpmf })
-      : '';
-
-    const cmdLine = cmd
+  function recomputeCmdLine(idx: number) {
+    const card = cards[idx];
+    if (!card) return;
+    const slot = document.querySelector<HTMLElement>(`[data-cmd-line="${idx}"]`);
+    if (!slot) return;
+    const cmd = resolveCmdLine(card, state);
+    slot.innerHTML = cmd
       ? `<div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-family:Consolas,monospace;font-size:12px;background:var(--pi-surface);padding:6px 8px;border-radius:4px;word-break:break-all;">
           <span style="flex:1;color:var(--pi-green-bright);">${escapeHtml(cmd)}</span>
           <button class="pi-host-copy-cmd" data-cmd="${escapeHtml(cmd)}" style="flex-shrink:0;background:none;border:1px solid var(--pi-border);border-radius:4px;color:var(--pi-text-dim);cursor:pointer;padding:2px 8px;font-size:12px;">📋</button>
         </div>`
       : '<div style="color:var(--pi-danger);font-size:12px;margin-top:4px;">請補題組/選項編號</div>';
-
-    return `<div class="pi-q-card">
-      <div class="pi-q-num">${qLabel}</div>
-      <div class="pi-q-text">${escapeHtml(card.question)}</div>
-      ${tagHtml}
-      <div style="margin-top:6px;font-size:12px;color:var(--pi-text-dim);">
-        回答：<span class="pi-host-reply-text-${qIdx}">${escapeHtml(card.reply)}</span>　注音：<strong class="pi-host-bpmf-text-${qIdx}" style="color:var(--pi-green-bright);font-family:Consolas,monospace;">${bpmf}</strong>
-        <span style="margin-left:8px;">${regenerateBtn}</span>
-      </div>
-      <div class="pi-host-cmd-line-${qIdx}">${cmdLine}</div>
-    </div>`;
   }
 
-  function getEffectiveGroup(idx: number): number {
-    const input = root.querySelector<HTMLInputElement>(`.pi-host-edit-group[data-idx="${idx}"]`);
-    return input ? parseInt(input.value, 10) || 0 : cards[idx]?.tag?.group ?? 0;
+  function recomputeAllCmdLines() {
+    cards.forEach((_, i) => recomputeCmdLine(i));
+    refreshCopyAllLabel();
   }
 
-  function getEffectiveOption(idx: number): number {
-    const input = root.querySelector<HTMLInputElement>(`.pi-host-edit-option[data-idx="${idx}"]`);
-    return input ? parseInt(input.value, 10) || 0 : cards[idx]?.tag?.option ?? 0;
+  function refreshCopyAllLabel() {
+    const btn = document.getElementById('pi-host-copy-all');
+    if (!btn) return;
+    const validCount = cards.filter((c) => resolveCmdLine(c, state)).length;
+    const skipped = cards.length - validCount;
+    btn.innerHTML = `📋 複製全部（${validCount}）${skipped > 0 ? `<span style="font-size:10px;opacity:0.7;">（略過 ${skipped} 題）</span>` : ''}`;
   }
 
-  function updateAllCards() {
-    const currentQid = (document.getElementById('pi-host-qid-display') as HTMLInputElement)?.value || questionId;
-    const prefixSelect = document.getElementById('pi-host-prefix-display') as HTMLSelectElement | null;
-    let currentPrefix = prefixSelect?.value || cmdPrefix;
-    if (currentPrefix === '__custom__') {
-      currentPrefix = (document.getElementById('pi-host-prefix-custom-display') as HTMLInputElement)?.value?.trim() || 'ghostink';
-    }
-    const cardsContainer = document.getElementById('pi-host-cards');
-    if (!cardsContainer) return;
-    cardsContainer.innerHTML = cards.map((card, i) => renderCardHtml(card, i, currentQid, currentPrefix)).join('');
-
-    // Re-attach copy handlers
-    cardsContainer.querySelectorAll('.pi-host-copy-cmd').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const cmd = btn.getAttribute('data-cmd') || '';
-        navigator.clipboard.writeText(cmd).catch(() => {});
-        const orig = btn.textContent;
-        btn.textContent = '✅';
-        setTimeout(() => { if (btn.textContent === '✅') btn.textContent = orig; }, 1200);
-      });
-    });
-
-    // Re-attach group/option edit listeners
-    cardsContainer.querySelectorAll('.pi-host-edit-group, .pi-host-edit-option').forEach((el) => {
-      el.addEventListener('input', () => updateAllCards());
-    });
-
-    // Re-attach prefix custom toggle
-    const pcSelect = document.getElementById('pi-host-prefix-display') as HTMLSelectElement | null;
-    const pcCustom = document.getElementById('pi-host-prefix-custom-display') as HTMLInputElement | null;
-    if (pcSelect) {
-      pcSelect.onchange = () => {
-        if (pcCustom) pcCustom.style.display = pcSelect.value === '__custom__' ? 'inline' : 'none';
-        updateAllCards();
-      };
-    }
-  }
-
-  function renderFullPage(currentQid: string, currentPrefix: string) {
-    const validCards = cards.filter((c) => {
-      const g = getEffectiveGroup(cards.indexOf(c));
-      const o = getEffectiveOption(cards.indexOf(c));
-      return g > 0 && o > 0;
-    });
-    const skipped = cards.length - validCards.length;
-
-    const cardsHtml = cards.map((card, i) => renderCardHtml(card, i, currentQid, currentPrefix)).join('');
-
+  function renderFullPage() {
     root.innerHTML = `
       <div class="pi-settings open">
-        <div style="text-align:right;font-size:12px;margin-bottom:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;margin-bottom:12px;">
+          <a href="#" id="pi-host-back" style="color:var(--pi-text-dim);text-decoration:none;">← 返回設定</a>
           <a href="#" id="pi-switch-from-commands" style="color:var(--pi-text-dim);text-decoration:none;">⇄ 切換模式</a>
         </div>
 
@@ -481,17 +483,17 @@ export function renderHostCommands(
 
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px;padding:10px;background:var(--pi-surface);border-radius:8px;">
           <label style="font-size:13px;color:var(--pi-text-dim);">題目id:</label>
-          <input id="pi-host-qid-display" type="text" value="${escapeHtml(currentQid)}" style="width:80px;padding:4px 8px;border:1px solid var(--pi-border);border-radius:4px;background:var(--pi-bg);color:var(--pi-text);font-size:13px;">
+          <input id="pi-host-qid-display" type="text" value="${escapeHtml(state.questionId)}" style="width:80px;padding:4px 8px;border:1px solid var(--pi-border);border-radius:4px;background:var(--pi-bg);color:var(--pi-text);font-size:13px;">
 
           <label style="font-size:13px;color:var(--pi-text-dim);margin-left:8px;">前綴:</label>
           <select id="pi-host-prefix-display" style="padding:4px 8px;border:1px solid var(--pi-border);border-radius:4px;background:var(--pi-bg);color:var(--pi-text);font-size:13px;">
-            <option value="ghostink" ${currentPrefix === 'ghostink' ? 'selected' : ''}>ghostink</option>
-            <option value="phantomink" ${currentPrefix === 'phantomink' ? 'selected' : ''}>phantomink</option>
-            <option value="__custom__" ${![ 'ghostink', 'phantomink' ].includes(currentPrefix) ? 'selected' : ''}>自訂</option>
+            <option value="ghostink" ${state.prefix === 'ghostink' ? 'selected' : ''}>ghostink</option>
+            <option value="phantomink" ${state.prefix === 'phantomink' ? 'selected' : ''}>phantomink</option>
+            <option value="__custom__" ${![ 'ghostink', 'phantomink' ].includes(state.prefix) ? 'selected' : ''}>自訂</option>
           </select>
-          <input id="pi-host-prefix-custom-display" type="text" placeholder="自訂前綴" value="${![ 'ghostink', 'phantomink' ].includes(currentPrefix) ? escapeHtml(currentPrefix) : ''}" style="width:100px;padding:4px 8px;border:1px solid var(--pi-border);border-radius:4px;background:var(--pi-bg);color:var(--pi-text);font-size:13px;display:${![ 'ghostink', 'phantomink' ].includes(currentPrefix) ? 'inline' : 'none'};">
+          <input id="pi-host-prefix-custom-display" type="text" placeholder="自訂前綴" value="${![ 'ghostink', 'phantomink' ].includes(state.prefix) ? escapeHtml(state.prefix) : ''}" style="width:100px;padding:4px 8px;border:1px solid var(--pi-border);border-radius:4px;background:var(--pi-bg);color:var(--pi-text);font-size:13px;display:${![ 'ghostink', 'phantomink' ].includes(state.prefix) ? 'inline' : 'none'};">
 
-          <button id="pi-host-copy-all" class="pi-btn" style="height:32px;font-size:12px;margin-left:auto;padding:0 12px;background:var(--pi-green);color:#fff;border:none;border-radius:6px;cursor:pointer;">📋 複製全部（${validCards.length}）${skipped > 0 ? `<span style="font-size:10px;opacity:0.7;">（略過 ${skipped} 題）</span>` : ''}</button>
+          <button id="pi-host-copy-all" class="pi-btn" style="height:32px;font-size:12px;margin-left:auto;padding:0 12px;background:var(--pi-green);color:#fff;border:none;border-radius:6px;cursor:pointer;"></button>
           <button id="pi-host-regenerate" class="pi-btn" style="height:32px;font-size:12px;padding:0 12px;background:var(--pi-key-dark);color:var(--pi-text-dim);border:none;border-radius:6px;cursor:pointer;">🔄 重新生成整組</button>
         </div>
 
@@ -499,137 +501,195 @@ export function renderHostCommands(
           謎底：${escapeHtml(answer)}${usedModel ? `　｜　模型：${escapeHtml(usedModel)}` : ''}
         </div>
 
-        <div id="pi-host-cards">
-          ${cardsHtml}
-        </div>
+        <div id="pi-host-cards"></div>
       </div>
     `;
-
-    // Wire up event handlers
-    document.getElementById('pi-host-qid-display')?.addEventListener('input', () => updateAllCards());
-    const pcSelect = document.getElementById('pi-host-prefix-display') as HTMLSelectElement | null;
-    const pcCustom = document.getElementById('pi-host-prefix-custom-display') as HTMLInputElement | null;
-    pcSelect?.addEventListener('change', () => {
-      if (pcCustom) pcCustom.style.display = pcSelect.value === '__custom__' ? 'inline' : 'none';
-      updateAllCards();
-    });
-    pcCustom?.addEventListener('input', () => updateAllCards());
-
-    document.getElementById('pi-host-copy-all')?.addEventListener('click', () => {
-      const qid = (document.getElementById('pi-host-qid-display') as HTMLInputElement)?.value || questionId;
-      let prefix = (document.getElementById('pi-host-prefix-display') as HTMLSelectElement)?.value || cmdPrefix;
-      if (prefix === '__custom__') {
-        prefix = (document.getElementById('pi-host-prefix-custom-display') as HTMLInputElement)?.value?.trim() || 'ghostink';
-      }
-      const cmds = cards
-        .map((c, i) => {
-          const g = getEffectiveGroup(i);
-          const o = getEffectiveOption(i);
-          if (!(g > 0 && o > 0)) return '';
-          const bpmf = toBopomofoCells(c.reply).join('');
-          if (!bpmf) return '';
-          return buildClueCommand({ prefix, questionId: qid, group: g, option: o, zhuyin: bpmf });
-        })
-        .filter(Boolean)
-        .sort((a, b) => {
-          const ga = parseInt(a.match(/題組:(\d+)/)?.[1] ?? '0', 10);
-          const gb = parseInt(b.match(/題組:(\d+)/)?.[1] ?? '0', 10);
-          if (ga !== gb) return ga - gb;
-          const oa = parseInt(a.match(/選項:(\d+)/)?.[1] ?? '0', 10);
-          const ob = parseInt(b.match(/選項:(\d+)/)?.[1] ?? '0', 10);
-          return oa - ob;
-        })
-        .join('\n');
-      navigator.clipboard.writeText(cmds).catch(() => {});
-      const btn = document.getElementById('pi-host-copy-all');
-      if (btn) {
-        const orig = btn.innerHTML;
-        btn.innerHTML = '✅ 已複製！';
-        setTimeout(() => { btn.innerHTML = orig; }, 1200);
-      }
-    });
-
-    document.getElementById('pi-host-regenerate')?.addEventListener('click', () => renderHostSetup(root, loadSettings()));
-
-    // Copy individual command handlers
-    root.querySelectorAll('.pi-host-copy-cmd').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const cmd = btn.getAttribute('data-cmd') || '';
-        navigator.clipboard.writeText(cmd).catch(() => {});
-        const orig = btn.textContent;
-        btn.textContent = '✅';
-        setTimeout(() => { if (btn.textContent === '✅') btn.textContent = orig; }, 1200);
-      });
-    });
-
-    // Group/option edit listeners
-    root.querySelectorAll('.pi-host-edit-group, .pi-host-edit-option').forEach((el) => {
-      el.addEventListener('input', () => {
-        const qid = (document.getElementById('pi-host-qid-display') as HTMLInputElement)?.value || questionId;
-        let prefix = (document.getElementById('pi-host-prefix-display') as HTMLSelectElement)?.value || cmdPrefix;
-        if (prefix === '__custom__') {
-          prefix = (document.getElementById('pi-host-prefix-custom-display') as HTMLInputElement)?.value?.trim() || 'ghostink';
-        }
-        renderFullPage(qid, prefix);
-      });
-    });
-
-    // Regenerate one reply
-    root.querySelectorAll('.pi-host-regenerate-one').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        if (!llm || !answer) return;
-        const idx = parseInt(btn.getAttribute('data-idx') ?? '', 10);
-        if (isNaN(idx) || idx >= cards.length) return;
-        const question = btn.getAttribute('data-question') ?? cards[idx].question;
-        btn.textContent = '⏳';
-        (btn as HTMLButtonElement).disabled = true;
-        try {
-          const generator = new PhantomInkGenerator(llm);
-          const newReply = await generator.regenerateReply(answer, question);
-          // Update card data
-          cards[idx] = { ...cards[idx], reply: newReply };
-          // Update the DOM directly without full re-render
-          const replySpan = root.querySelector(`.pi-host-reply-text-${idx}`);
-          const bpmfSpan = root.querySelector(`.pi-host-bpmf-text-${idx}`);
-          const cmdLineDiv = root.querySelector(`.pi-host-cmd-line-${idx}`);
-          if (replySpan) replySpan.textContent = newReply;
-          const newBpmf = toBopomofoCells(newReply).join('');
-          if (bpmfSpan) bpmfSpan.textContent = newBpmf;
-          if (cmdLineDiv && newBpmf) {
-            const currentQid = (document.getElementById('pi-host-qid-display') as HTMLInputElement)?.value || questionId;
-            let cp = (document.getElementById('pi-host-prefix-display') as HTMLSelectElement)?.value || cmdPrefix;
-            if (cp === '__custom__') cp = (document.getElementById('pi-host-prefix-custom-display') as HTMLInputElement)?.value?.trim() || 'ghostink';
-            const g = getEffectiveGroup(idx);
-            const o = getEffectiveOption(idx);
-            const newCmd = g > 0 && o > 0 ? buildClueCommand({ prefix: cp, questionId: currentQid, group: g, option: o, zhuyin: newBpmf }) : '';
-            cmdLineDiv.innerHTML = newCmd
-              ? `<div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-family:Consolas,monospace;font-size:12px;background:var(--pi-surface);padding:6px 8px;border-radius:4px;word-break:break-all;">
-                  <span style="flex:1;color:var(--pi-green-bright);">${escapeHtml(newCmd)}</span>
-                  <button class="pi-host-copy-cmd" data-cmd="${escapeHtml(newCmd)}" style="flex-shrink:0;background:none;border:1px solid var(--pi-border);border-radius:4px;color:var(--pi-text-dim);cursor:pointer;padding:2px 8px;font-size:12px;">📋</button>
-                </div>`
-              : '<div style="color:var(--pi-danger);font-size:12px;margin-top:4px;">請補題組/選項編號</div>';
-          }
-          btn.textContent = '✅';
-          setTimeout(() => { btn.textContent = '🔄 再生一個'; (btn as HTMLButtonElement).disabled = false; }, 1200);
-        } catch {
-          btn.textContent = '❌';
-          setTimeout(() => { btn.textContent = '🔄 再生一個'; (btn as HTMLButtonElement).disabled = false; }, 1200);
-        }
-      });
-    });
+    renderCards();
+    refreshCopyAllLabel();
+    attachDelegatedHandlers();
   }
 
-  // Initial render
-  renderFullPage(questionId, cmdPrefix);
+  // R3/R5/R6: ONE click + ONE input listener per page. Dispatch by class.
+  function attachDelegatedHandlers() {
+    const cardsContainer = document.getElementById('pi-host-cards');
+    if (!cardsContainer) return;
 
-  // Switch mode link — clear mode and reload to mode selection
-  document.getElementById('pi-switch-from-commands')?.addEventListener('click', (e) => {
-    e.preventDefault();
-    const s = loadSettings();
-    if (s) {
-      s.mode = undefined;
-      saveSettings(s);
+    cardsContainer.addEventListener('click', onCardsClick);
+    cardsContainer.addEventListener('input', onCardsInput);
+    document.getElementById('pi-host-qid-display')?.addEventListener('input', onQidOrPrefixInput);
+    document.getElementById('pi-host-prefix-display')?.addEventListener('change', onQidOrPrefixInput);
+    document.getElementById('pi-host-prefix-custom-display')?.addEventListener('input', onQidOrPrefixInput);
+
+    document.getElementById('pi-host-copy-all')?.addEventListener('click', onCopyAll);
+    document.getElementById('pi-host-regenerate')?.addEventListener('click', onRegenerateAll);
+    document.getElementById('pi-switch-from-commands')?.addEventListener('click', onSwitchMode);
+    document.getElementById('pi-host-back')?.addEventListener('click', onBackToSetup);
+  }
+
+  function onCardsClick(e: Event) {
+    const target = e.target as HTMLElement;
+    if (!target) return;
+    const copyBtn = target.closest<HTMLElement>('.pi-host-copy-cmd');
+    if (copyBtn) {
+      const cmd = copyBtn.getAttribute('data-cmd') || '';
+      navigator.clipboard.writeText(cmd).catch(() => {});
+      const orig = copyBtn.textContent;
+      copyBtn.textContent = '✅';
+      setTimeout(() => { if (copyBtn.textContent === '✅') copyBtn.textContent = orig; }, 1200);
+      return;
     }
-    window.location.reload();
-  });
+    const regenBtn = target.closest<HTMLElement>('.pi-host-regenerate-one');
+    if (regenBtn) {
+      void handleRegenerate(regenBtn);
+      return;
+    }
+    const restoreBtn = target.closest<HTMLElement>('.pi-host-restore-one');
+    if (restoreBtn) {
+      handleRestore(restoreBtn);
+      return;
+    }
+  }
+
+  function onCardsInput(e: Event) {
+    const target = e.target as HTMLInputElement | null;
+    if (!target) return;
+    if (!target.classList.contains('pi-host-edit-group') && !target.classList.contains('pi-host-edit-option')) return;
+    const idx = parseInt(target.getAttribute('data-idx') ?? '', 10);
+    if (isNaN(idx) || idx >= cards.length) return;
+    const card = cards[idx];
+    const groupVal = parseInt((root.querySelector<HTMLInputElement>(`.pi-host-edit-group[data-idx="${idx}"]`)?.value) || '0', 10);
+    const optionVal = parseInt((root.querySelector<HTMLInputElement>(`.pi-host-edit-option[data-idx="${idx}"]`)?.value) || '0', 10);
+    const g = Number.isFinite(groupVal) ? groupVal : 0;
+    const o = Number.isFinite(optionVal) ? optionVal : 0;
+    card.tag = (g > 0 && o > 0) ? { group: g, option: o } : (card.tag ?? null);
+    recomputeCmdLine(idx);
+    refreshCopyAllLabel();
+  }
+
+  function onQidOrPrefixInput() {
+    state.questionId = (document.getElementById('pi-host-qid-display') as HTMLInputElement | null)?.value ?? state.questionId;
+    const selectVal = (document.getElementById('pi-host-prefix-display') as HTMLSelectElement | null)?.value ?? state.prefix;
+    const custom = (document.getElementById('pi-host-prefix-custom-display') as HTMLInputElement | null)?.value?.trim();
+    state.prefix = selectVal === '__custom__' ? (custom || 'ghostink') : selectVal;
+    recomputeAllCmdLines();
+  }
+
+  function onCopyAll() {
+    const cmds = cards
+      .map((c) => resolveCmdLine(c, state))
+      .filter(Boolean)
+      .sort((a, b) => {
+        const ga = parseInt(a.match(/題組:(\d+)/)?.[1] ?? '0', 10);
+        const gb = parseInt(b.match(/題組:(\d+)/)?.[1] ?? '0', 10);
+        if (ga !== gb) return ga - gb;
+        const oa = parseInt(a.match(/選項:(\d+)/)?.[1] ?? '0', 10);
+        const ob = parseInt(b.match(/選項:(\d+)/)?.[1] ?? '0', 10);
+        return oa - ob;
+      })
+      .join('\n');
+    navigator.clipboard.writeText(cmds).catch(() => {});
+    const btn = document.getElementById('pi-host-copy-all');
+    if (btn) {
+      const orig = btn.innerHTML;
+      btn.innerHTML = '✅ 已複製！';
+      setTimeout(() => { btn.innerHTML = orig; refreshCopyAllLabel(); }, 1200);
+    }
+  }
+
+  function onRegenerateAll() {
+    if (!pasteText) {
+      // No paste to restore (e.g. direct call from a test) — go back without prefilling.
+      renderHostSetup(root, loadSettings());
+      return;
+    }
+    renderHostSetup(root, loadSettings(), pasteText);
+  }
+
+  function onSwitchMode(e: Event) {
+    e.preventDefault();
+    clearModeAndReload();
+  }
+
+  function onBackToSetup(e: Event) {
+    e.preventDefault();
+    renderHostSetup(root, loadSettings(), pasteText);
+  }
+
+  async function handleRegenerate(btn: HTMLElement) {
+    if (!llm) return;
+    const idx = parseInt(btn.getAttribute('data-idx') ?? '', 10);
+    if (isNaN(idx) || idx >= cards.length) return;
+    const card = cards[idx];
+    const question = btn.getAttribute('data-question') ?? card.question;
+    const originalText = btn.textContent;
+    btn.textContent = '⏳';
+    (btn as HTMLButtonElement).disabled = true;
+    const errSlot = root.querySelector(`.pi-host-error-slot-${idx}`);
+    if (errSlot) errSlot.textContent = '';
+    try {
+      const generator = new PhantomInkGenerator(llm);
+      const avoid = cards.filter((_, i) => i !== idx).map((c) => c.reply).filter(Boolean);
+      const rejected = card.reply ? [card.reply] : [];
+      const newReply = await generator.regenerateReply(answer, question, { avoid, rejected });
+      // Save the replaced reply so the restore button can swap it back.
+      card.previousReply = card.reply;
+      card.reply = newReply;
+      // Local DOM update — do NOT re-render the whole page (would clobber focus).
+      const replySpan = root.querySelector(`.pi-host-reply-text-${idx}`);
+      const bpmfSpan = root.querySelector(`.pi-host-bpmf-text-${idx}`);
+      const newBpmf = toBopomofoCells(newReply).join('');
+      if (replySpan) replySpan.textContent = newReply;
+      if (bpmfSpan) bpmfSpan.textContent = newBpmf;
+      recomputeCmdLine(idx);
+      refreshCopyAllLabel();
+      btn.textContent = '✅';
+      setTimeout(() => { btn.textContent = originalText ?? '🔄 再生一個'; (btn as HTMLButtonElement).disabled = false; }, 1200);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (errSlot) errSlot.textContent = `❌ ${msg}`;
+      btn.textContent = originalText ?? '🔄 再生一個';
+      (btn as HTMLButtonElement).disabled = false;
+    }
+  }
+
+  function handleRestore(btn: HTMLElement) {
+    const idx = parseInt(btn.getAttribute('data-idx') ?? '', 10);
+    if (isNaN(idx) || idx >= cards.length) return;
+    const card = cards[idx];
+    if (!card.previousReply) return;
+    card.reply = card.previousReply;
+    card.previousReply = undefined;
+    // Local DOM update — same rules as regenerate.
+    const replySpan = root.querySelector(`.pi-host-reply-text-${idx}`);
+    const bpmfSpan = root.querySelector(`.pi-host-bpmf-text-${idx}`);
+    const newBpmf = toBopomofoCells(card.reply).join('');
+    if (replySpan) replySpan.textContent = card.reply;
+    if (bpmfSpan) bpmfSpan.textContent = newBpmf;
+    recomputeCmdLine(idx);
+    refreshCopyAllLabel();
+    // Re-render the card so the restore button disappears (no previousReply anymore).
+    const cardEl = root.querySelector(`.pi-q-card[data-card-idx="${idx}"]`);
+    cardEl?.replaceWith((() => {
+      const wrap = document.createElement('div');
+      wrap.innerHTML = renderCardHtml(card, idx, state);
+      return wrap.firstElementChild!;
+    })());
+  }
+
+  renderFullPage();
+}
+
+/** Rebuild the paste-area text from saved groupTags (R7). Group 1 lines, then 2, etc. */
+export function rebuildPasteText(groupTags: { group: number; index: number; text: string }[]): string {
+  const lines: string[] = [];
+  let currentGroup = 0;
+  for (const tag of groupTags) {
+    if (tag.group !== currentGroup) {
+      lines.push(`第 ${tag.group} 組`);
+      currentGroup = tag.group;
+    }
+    const text = tag.text.endsWith('？') || tag.text.endsWith('?') ? tag.text : `${tag.text}？`;
+    lines.push(text);
+  }
+  return lines.join('\n');
 }

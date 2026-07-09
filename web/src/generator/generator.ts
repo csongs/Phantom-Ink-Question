@@ -590,21 +590,53 @@ export class PhantomInkGenerator {
     };
   }
 
-  /** Regenerates ONLY the reply for a single question, keeping its text. */
-  async regenerateReply(answer: string, question: string): Promise<string> {
-    const prompt =
-      `謎底是「${answer}」。\n` +
-      `題目：${question}\n\n` +
-      `請為這題填入一個新的回答（替代之前的回答），規則：\n` +
-      `1. 回答**不超過六個中文字**、不能出現謎底文字、全中文\n` +
-      `2. 語意明確、結尾加句號\n` +
-      `3. 盡量不同於常見回答，但邏輯上仍合理\n\n` +
-      `輸出 JSON：{"reply": "..."}`;
-    const raw = await this.jsonChat([{ role: 'user', content: prompt }]);
-    let reply = (raw.reply ?? '').trim();
-    reply = convertPunctuation(await toTraditional(reply));
-    if (reply && !reply.endsWith('。')) reply += '。';
-    return reply;
+  /** Regenerates ONLY the reply for a single question, keeping its text.
+   *  R4 fix: opts.avoid / opts.rejected are folded into the prompt AND a CODE
+   *  hard-guard runs on the reply (≤6 chars, non-empty, no answer chars,
+   *  not in avoid list). Up to 3 internal attempts; throws with reason on
+   *  total failure (UI surfaces the message on the card). */
+  async regenerateReply(
+    answer: string,
+    question: string,
+    opts: { avoid?: string[]; rejected?: string[] } = {},
+  ): Promise<string> {
+    const avoid = opts.avoid ?? [];
+    const rejected = opts.rejected ?? [];
+    const avoidHint = avoid.length
+      ? `\n以下回答**已被其他題採用**，請避免與它們重複或近義：${avoid.map((a) => `「${a}」`).join('、')}\n`
+      : '';
+    const rejectedHint = rejected.length
+      ? `\n此題已有的回答（請不要重複或同義）：${rejected.map((a) => `「${a}」`).join('、')}\n`
+      : '';
+
+    let lastErr = '';
+    for (let attempt = 0; attempt < this.maxRetries; attempt++) {
+      const prompt =
+        `謎底是「${answer}」。\n` +
+        `題目：${question}\n` +
+        avoidHint +
+        rejectedHint +
+        `\n請為這題填入一個新的回答（替代之前的回答），規則：\n` +
+        `1. 回答**不超過六個中文字**、不能出現謎底文字、全中文\n` +
+        `2. 語意明確、結尾加句號\n` +
+        `3. 盡量不同於常見回答，但邏輯上仍合理\n\n` +
+        `輸出 JSON：{"reply": "..."}`;
+      const raw = await this.jsonChat([{ role: 'user', content: prompt }]);
+      let reply = (raw.reply ?? '').trim();
+      reply = convertPunctuation(await toTraditional(reply));
+      if (reply && !reply.endsWith('。')) reply += '。';
+
+      // CODE hard-guard (mirrors designQuestions hard checks at line 491+).
+      const reasons: string[] = [];
+      if (!reply.trim()) reasons.push('空回答');
+      if ([...answer].some((c) => reply.includes(c))) reasons.push('洩漏謎底文字');
+      if (PhantomInkGenerator.replyCharCount(reply) > 6) reasons.push('回答過長（超過六字）');
+      if (avoid.some((a) => a && reply === a)) reasons.push('與其他題回答重複');
+
+      if (reasons.length === 0) return reply;
+      lastErr = `第 ${attempt + 1} 次不合格：${reasons.join('、')}`;
+    }
+    throw new Error(`重生回答失敗：連 ${this.maxRetries} 次皆不合格（${lastErr}）`);
   }
 
   private async inferCategory(answer: string): Promise<string> {

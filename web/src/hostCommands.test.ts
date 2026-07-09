@@ -102,4 +102,18 @@ describe('buildClueCommands', () => {
     );
     expect(cmds[0]).toBe('/phantomink clue 題目id:5 題組:1 選項:1 注音:ㄉㄧˋㄇㄧㄢˋ');
   });
+
+  it('matches a question whose pasted form has multiple trailing ？ (R8 regression)', () => {
+    // The previous local normalize only stripped ONE trailing ？, so
+    // 「真的嗎？？」 failed to match the tag and silently produced no command.
+    const tags = [{ group: 1, index: 1, text: '真的嗎？' }];
+    const cmds = buildClueCommands(
+      [{ question: '真的嗎？？', reply: '是的。' }],
+      tags,
+      '5',
+    );
+    expect(cmds).toEqual([
+      '/ghostink clue 題目id:5 題組:1 選項:1 注音:ㄕˋㄉㄜ˙',
+    ]);
+  });
 });

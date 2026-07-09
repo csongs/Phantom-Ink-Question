@@ -452,4 +452,69 @@ describe('PhantomInkGenerator.regenerateReply', () => {
     expect(newReply).toContain('金屬');
     expect(newReply.endsWith('。')).toBe(true);
   });
+
+  it('folds avoid / rejected lists into the prompt (R4 contract)', async () => {
+    const reply = JSON.stringify({ reply: '全新觸鍵。' });
+    const backend = new FakeBackend([reply]);
+    const generator = new PhantomInkGenerator(backend);
+
+    await generator.regenerateReply('鋼琴', '它觸感如何？', {
+      avoid: ['白色外觀。', '黑色光澤。'],
+      rejected: ['木頭質地。'],
+    });
+
+    const userMsg = backend.calls[0].messages[0].content;
+    expect(userMsg).toContain('白色外觀');
+    expect(userMsg).toContain('黑色光澤');
+    expect(userMsg).toContain('木頭質地');
+  });
+
+  it('retries an over-length reply and accepts the next valid one (R4 CODE hard-guard)', async () => {
+    // First reply is 8 Chinese chars (>6); second is 4 chars and valid.
+    const tooLong = JSON.stringify({ reply: '這是一個非常長的回答。' });
+    const justRight = JSON.stringify({ reply: '全新。' });
+    const backend = new FakeBackend([tooLong, justRight]);
+    const generator = new PhantomInkGenerator(backend);
+
+    const reply = await generator.regenerateReply('鋼琴', '它有何特點？');
+
+    expect(reply).toBe('全新。');
+    expect(backend.calls).toHaveLength(2); // one retry, no exception
+  });
+
+  it('throws after 3 hard-guard failures (R4 — UI surfaces this message)', async () => {
+    // Every reply is too long.
+    const long = JSON.stringify({ reply: '這是一個非常長的回答。' });
+    const backend = new FakeBackend([long, long, long]);
+    const generator = new PhantomInkGenerator(backend, 3);
+
+    await expect(generator.regenerateReply('鋼琴', '它有何特點？')).rejects.toThrow(/重生回答失敗/);
+    expect(backend.calls).toHaveLength(3);
+  });
+
+  it('rejects a reply that leaks an answer character (R4 CODE hard-guard)', async () => {
+    const leaking = JSON.stringify({ reply: '鋼琴音色。' }); // contains 鋼
+    const safe = JSON.stringify({ reply: '柔和。' });
+    const backend = new FakeBackend([leaking, safe]);
+    const generator = new PhantomInkGenerator(backend);
+
+    const reply = await generator.regenerateReply('鋼琴', '它聽起來如何？');
+
+    expect(reply).toBe('柔和。');
+    expect(backend.calls).toHaveLength(2);
+  });
+
+  it('rejects a reply identical to one in avoid list (R4 CODE hard-guard)', async () => {
+    const dup = JSON.stringify({ reply: '黑色光澤。' });
+    const fresh = JSON.stringify({ reply: '霧面。' });
+    const backend = new FakeBackend([dup, fresh]);
+    const generator = new PhantomInkGenerator(backend);
+
+    const reply = await generator.regenerateReply('鋼琴', '它是何種顏色？', {
+      avoid: ['黑色光澤。'],
+    });
+
+    expect(reply).toBe('霧面。');
+    expect(backend.calls).toHaveLength(2);
+  });
 });

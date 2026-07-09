@@ -524,13 +524,15 @@ function main(): void {
   if (!root) throw new Error('#app not found');
 
   const settings = loadSettings();
-  if (!settings) {
-    // First-time visitor or schema mismatch — show mode selection
+  if (!settings || !settings.mode) {
+    // First-time visitor, schema mismatch, OR user cleared mode — show mode selection.
+    // R2 fix: clearModeAndReload only flips settings.mode to undefined, which must
+    // land here, not route silently into the player screen.
     renderHostModeSelection(root, (mode) => {
       const s = loadSettings() ?? { backend: 'groq', apiKey: '', model: '' } as Settings;
       s.mode = mode;
       saveSettings(s);
-      // Reload so main() re-routes correctly
+      // Reload so main() re-routes correctly (player vs host flow).
       window.location.reload();
     });
     return;
