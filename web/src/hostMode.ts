@@ -17,7 +17,7 @@
 import { escapeHtml } from './game';
 import { loadSettings, saveSettings, type Settings } from './settings';
 import { parseGroupedQuestions, matchToBank, normalizeQuestion } from './groupPaste';
-import { toBopomofoCells } from './bopomofo';
+import { toBopomofo, toBopomofoCells } from './bopomofo';
 import { buildClueCommand } from './hostCommands';
 import type { LLMBackend } from './backends/shared';
 import { QUESTION_BANK } from './generator/prompts';
@@ -616,9 +616,20 @@ export function renderHostCommands(
   pasteText?: string,
 ): void {
   const tagByNorm = new Map(tags.map((t) => [normalizeQuestion(t.text), t]));
-  const cards: HostCard[] = questions.map((q) => {
+  const rawCards: HostCard[] = questions.map((q) => {
     const tag = tagByNorm.get(normalizeQuestion(q.question)) ?? null;
     return { question: q.question, tag: tag ? { group: tag.group, option: tag.index } : null, reply: q.reply };
+  });
+
+  // 照題組/選項排序：未配對 group 的（舊資料）排最後，否則 (group, option) 升冪。
+  // 排序穩定（Array.sort 是穩定的），所以同組的題目仍維持原本順序。
+  const cards = [...rawCards].sort((a, b) => {
+    const ga = a.tag?.group ?? Number.MAX_SAFE_INTEGER;
+    const gb = b.tag?.group ?? Number.MAX_SAFE_INTEGER;
+    if (ga !== gb) return ga - gb;
+    const oa = a.tag?.option ?? Number.MAX_SAFE_INTEGER;
+    const ob = b.tag?.option ?? Number.MAX_SAFE_INTEGER;
+    return oa - ob;
   });
 
   const initialPrefix = prefix || 'ghostink';
@@ -686,12 +697,34 @@ export function renderHostCommands(
           謎底：${escapeHtml(answer)}${usedModel ? `　｜　模型：${escapeHtml(usedModel)}` : ''}
         </div>
 
+        <details class="pi-host-bpmf-tool" style="margin-bottom:12px;">
+          <summary style="cursor:pointer;font-size:13px;color:var(--pi-text-dim);padding:6px 0;">🎵 文字轉注音（破音字處理）</summary>
+          <div style="padding:6px 0;">
+            <textarea class="pi-bpmf-input" rows="2" placeholder="輸入中文文字驗證注音，例如：音樂、銀行" style="width:100%;font-size:13px;"></textarea>
+            <div class="pi-bpmf-output" style="margin-top:6px;font-size:14px;font-family:Consolas,monospace;background:var(--pi-surface);padding:8px 10px;border-radius:6px;min-height:32px;word-break:break-all;"></div>
+          </div>
+        </details>
+
         <div id="pi-host-cards"></div>
       </div>
     `;
     renderCards();
     refreshCopyAllLabel();
     attachDelegatedHandlers();
+    wireHostBpmf();
+  }
+
+  // 指令頁的「文字轉注音」inline 工具 — 純本機,只為讓出題者快速驗證
+  // 某個回答的注音是否正確(不需切到小工具頁)。
+  function wireHostBpmf() {
+    const input = root.querySelector<HTMLTextAreaElement>('.pi-host-bpmf-tool .pi-bpmf-input');
+    const output = root.querySelector<HTMLElement>('.pi-host-bpmf-tool .pi-bpmf-output');
+    if (!input || !output) return;
+    const run = () => {
+      const text = input.value.trim();
+      output.textContent = text ? toBopomofo(text) : '';
+    };
+    input.addEventListener('input', run);
   }
 
   // R3/R5/R6: ONE click + ONE input listener per page. Dispatch by class.
@@ -804,6 +837,22 @@ export function renderHostCommands(
     (btn as HTMLButtonElement).disabled = true;
     const errSlot = root.querySelector(`.pi-host-error-slot-${idx}`);
     if (errSlot) errSlot.textContent = '';
+
+    // BUG FIX: the LLM passed in here was built in startHostGeneration() and
+    // has an onEvent that REPLACES root.innerHTML with the loading screen.
+    // That onEvent stays attached for the lifetime of the backend, so a
+    // single-question fallback (e.g. "改用下一個模型⋯⋯") was wiping out the
+    // command-cards page and showing the loading screen — looks like a full
+    // re-generation. Swap to a local onEvent that only updates this card's
+    // slot, then restore on the way out (success or failure).
+    const groqLlm = llm as { onEvent?: (msg: string) => void };
+    const previousOnEvent = groqLlm.onEvent;
+    if (typeof previousOnEvent === 'function') {
+      groqLlm.onEvent = (msg: string) => {
+        if (errSlot) errSlot.textContent = `🔄 ${msg}`;
+      };
+    }
+
     try {
       const generator = new PhantomInkGenerator(llm);
       const avoid = cards.filter((_, i) => i !== idx).map((c) => c.reply).filter(Boolean);
@@ -827,6 +876,8 @@ export function renderHostCommands(
       if (errSlot) errSlot.textContent = `❌ ${msg}`;
       btn.textContent = originalText ?? '🔄 再生一個';
       (btn as HTMLButtonElement).disabled = false;
+    } finally {
+      if (typeof previousOnEvent === 'function') groqLlm.onEvent = previousOnEvent;
     }
   }
 

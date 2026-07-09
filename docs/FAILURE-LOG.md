@@ -21,6 +21,14 @@
 
 ## 紀錄（新的在上面）
 
+### FL-9｜2026-07-09｜「🔄 再生一個」遭遇 fallback 換模型時,頁面被 `progressLog` 覆蓋成 AI 思考中
+- **症狀**：在 Host 模式指令頁按單題的「🔄 再生一個」,若 backend 剛好碰到 429 換桶（`⚠️ mock model 達到限速，改用下一個模型⋯⋯` 等 onEvent 訊息）,整個頁面被切換成「AI 思考中」的 loading 畫面,使用者以為按錯變成整組重新生成。
+- **根因**：`web/src/hostMode.ts` 的 `startHostGeneration()` 建立 `GroqFallbackBackend` 時傳入的 `progressLog` 閉包會 `root.innerHTML = '<loading>'` —— **這個 onEvent 在 backend 物件存續期間永遠有效**,而 `renderHostCommands()` 把 backend 物件原封不動傳給指令頁。指令頁的「再生一個」按鈕共用同一個 backend,所以單題 fallback 的 onEvent 仍然走那個 closure,把整頁面砍掉重練。
+- **錯誤做法**：以為「onEvent 只在 generate() 過程中會被觸發」,沒有考慮 regenerateReply 也會觸發;也沒有為單題路徑換一個本地的 onEvent 替代品。
+- **正確修法**：`handleRegenerate()` 進場前先備份 `groqLlm.onEvent`,換成「只更新當前卡片 errSlot」的本地 callback,離場（成功或失敗）後在 `finally` 還原。這樣 fallback 訊息會出現在「該題的錯誤欄位」而非覆蓋整頁。
+- **現行防護**：`hostMode.ts:handleRegenerate` 的 onEvent swap-restore;`hostMode.test.ts` 新增 `FallbackMockBackend` + 「再生一個觸發 fallback 時不覆蓋整頁」測試（驗 `pi-loading` 不出現、卡片 reply 仍正確更新）。
+- **關鍵字**：onEvent, fallback, 再生一個, regenerate, progressLog, 覆蓋整頁, 思考中
+
 ### FL-8｜2026-07-09｜`regenerateReply` 缺 CODE 硬擋,UI 直接採用不合格回答（重演 FL-1）
 - **症狀**：在 Host 模式指令頁按「🔄 再生一個」,LLM 回覆可能超過 6 中文字、含謎底字、空字串、或與其他題目前採用的回答重複——UI 直接採用、複製時把不合格回答送給 BOT。
 - **根因**：`web/src/generator/generator.ts` 的 `regenerateReply()` 原本只在 prompt 裡要求規則、回傳前沒有任何檢查,且 `opts.avoid` / `opts.rejected` 參數完全沒實作。這正是 `docs/QUESTION-QUALITY.md` 原則 5 明令「CODE 硬擋」的情境,卻在剛加的功能裡被略過。發現於 host-mode Phase 3 review R4。
