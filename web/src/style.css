@@ -628,3 +628,15 @@ body {
   white-space: pre;
 }
 .pi-host-cmds-body.open { display: block; }
+
+/* ── Mode selection ── */
+.pi-mode-btn {
+  transition: border-color 0.2s, filter 0.15s;
+}
+.pi-mode-btn:hover:not(:disabled) {
+  filter: brightness(1.1);
+  border-color: var(--pi-green-bright) !important;
+}
+.pi-mode-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}

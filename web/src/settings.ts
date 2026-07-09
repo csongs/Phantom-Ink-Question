@@ -7,6 +7,11 @@ export interface Settings {
   backend: 'groq' | 'hf';
   apiKey: string;
   model: string;
+  mode?: 'host' | 'player';
+  /** Question-set id for BOT commands (出題者模式). */
+  hostQuestionId?: string;
+  /** Command prefix (ghostink / phantomink / custom). */
+  cmdPrefix?: string;
   answerMode?: 'ai' | 'human';
   humanAnswer?: string;
   numCandidates?: number;
@@ -18,7 +23,7 @@ export interface Settings {
 }
 
 const STORAGE_KEY = 'phantom-ink-settings';
-const CURRENT_SCHEMA_VERSION = 1;
+const CURRENT_SCHEMA_VERSION = 2;
 
 export function loadSettings(): Settings | null {
   const raw = localStorage.getItem(STORAGE_KEY);

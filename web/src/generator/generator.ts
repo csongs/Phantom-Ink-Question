@@ -590,6 +590,23 @@ export class PhantomInkGenerator {
     };
   }
 
+  /** Regenerates ONLY the reply for a single question, keeping its text. */
+  async regenerateReply(answer: string, question: string): Promise<string> {
+    const prompt =
+      `謎底是「${answer}」。\n` +
+      `題目：${question}\n\n` +
+      `請為這題填入一個新的回答（替代之前的回答），規則：\n` +
+      `1. 回答**不超過六個中文字**、不能出現謎底文字、全中文\n` +
+      `2. 語意明確、結尾加句號\n` +
+      `3. 盡量不同於常見回答，但邏輯上仍合理\n\n` +
+      `輸出 JSON：{"reply": "..."}`;
+    const raw = await this.jsonChat([{ role: 'user', content: prompt }]);
+    let reply = (raw.reply ?? '').trim();
+    reply = convertPunctuation(await toTraditional(reply));
+    if (reply && !reply.endsWith('。')) reply += '。';
+    return reply;
+  }
+
   private async inferCategory(answer: string): Promise<string> {
     const prompt = `請判斷"${answer}"最適合以下哪個類別，只輸出類別名稱：\n${Object.keys(CATEGORY_HINTS).join('、')}`;
     const reply = await this.llm.chat([{ role: 'user', content: prompt }], 0.3, 20);

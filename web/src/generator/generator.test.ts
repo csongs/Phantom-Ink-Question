@@ -426,3 +426,30 @@ describe('PhantomInkGenerator.generate', () => {
     expect(messages.some((m) => m.startsWith('❌ 謎底生成失敗'))).toBe(false);
   });
 });
+
+describe('PhantomInkGenerator.regenerateReply', () => {
+  it('replaces the reply for a single question, using json_object mode', async () => {
+    const reply = JSON.stringify({ reply: '白色金屬。' });
+    const backend = new FakeBackend([reply]);
+    const generator = new PhantomInkGenerator(backend);
+
+    const newReply = await generator.regenerateReply('鋼琴', '它是何種顏色？');
+
+    expect(newReply).toBe('白色金屬。');
+    const call = backend.calls[0];
+    expect(call.messages[0].content).toContain('鋼琴');
+    expect(call.messages[0].content).toContain('它是何種顏色？');
+    expect(call.responseFormat).toEqual({ type: 'json_object' });
+  });
+
+  it('post-processes to traditional Chinese and adds a trailing 。', async () => {
+    const reply = JSON.stringify({ reply: '白色金属。' });
+    const backend = new FakeBackend([reply]);
+    const generator = new PhantomInkGenerator(backend);
+
+    const newReply = await generator.regenerateReply('鋼琴', '它是何種顏色？');
+
+    expect(newReply).toContain('金屬');
+    expect(newReply.endsWith('。')).toBe(true);
+  });
+});

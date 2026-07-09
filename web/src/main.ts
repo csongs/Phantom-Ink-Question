@@ -13,6 +13,7 @@ import {
 } from './game';
 import { renderQuestionSetup, readQuestionSetup, refreshSetupValidity } from './questionSetup';
 import { solvePuzzle, type SolveResult } from './solver';
+import { renderHostModeSelection, renderHostSetup } from './hostMode';
 
 export function toGameQuestions(
   questions: { question: string; reply: string }[],
@@ -375,6 +376,9 @@ export function showSettingsScreen(root: HTMLElement): void {
 
   root.innerHTML = `
     <div class="pi-settings open">
+      <div style="text-align:right;font-size:12px;margin-bottom:12px;">
+        <a href="#" id="pi-switch-mode" style="color:var(--pi-text-dim);text-decoration:none;">⇄ 切換模式</a>
+      </div>
       <h2>幽靈筆跡 👻</h2>
 
       <div class="pi-settings-group">
@@ -502,12 +506,41 @@ export function showSettingsScreen(root: HTMLElement): void {
   document.getElementById('pi-solver-btn')?.addEventListener('click', () => {
     renderSolverHelper(root);
   });
+
+  // Mode switch link
+  document.getElementById('pi-switch-mode')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    const s = loadSettings();
+    if (s) {
+      s.mode = undefined;
+      saveSettings(s);
+    }
+    window.location.reload();
+  });
 }
 
 function main(): void {
   const root = document.getElementById('app');
   if (!root) throw new Error('#app not found');
-  showSettingsScreen(root);
+
+  const settings = loadSettings();
+  if (!settings) {
+    // First-time visitor or schema mismatch — show mode selection
+    renderHostModeSelection(root, (mode) => {
+      const s = loadSettings() ?? { backend: 'groq', apiKey: '', model: '' } as Settings;
+      s.mode = mode;
+      saveSettings(s);
+      // Reload so main() re-routes correctly
+      window.location.reload();
+    });
+    return;
+  }
+
+  if (settings.mode === 'host') {
+    renderHostSetup(root, settings);
+  } else {
+    showSettingsScreen(root);
+  }
 }
 
 if (typeof document !== 'undefined' && document.getElementById('app')) {
