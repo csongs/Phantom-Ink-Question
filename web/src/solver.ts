@@ -166,7 +166,7 @@ export async function solvePuzzle(
   onRawReply?: (stage: 1 | 2, raw: string) => void,
 ): Promise<SolveResult> {
   // ── Stage 1: Decode bopomofo into reply text ──
-  onProgress?.(1, '階段 1/2：解讀線索中⋯⋯（使用 Qwen）');
+  onProgress?.(1, '階段 1/2：解讀線索中⋯⋯');
 
   const stage1Messages = [
     { role: 'system' as const, content: CLUE_SOLVER_SYSTEM_PROMPT },
@@ -196,7 +196,7 @@ export async function solvePuzzle(
   }
 
   // ── Stage 2: Guess the final answer ──
-  onProgress?.(2, '階段 2/2：推測謎底中⋯⋯（使用 Llama）');
+  onProgress?.(2, '階段 2/2：推測謎底中⋯⋯');
 
   const stage2Messages = [
     { role: 'system' as const, content: FINAL_GUESSER_SYSTEM_PROMPT },

@@ -1,6 +1,6 @@
 // web/src/main.ts
 import { loadSettings, saveSettings, type Settings } from './settings';
-import { GroqBackend, GROQ_DEFAULT_MODEL } from './backends/groq';
+import { GroqFallbackBackend } from './backends/fallbackGroq';
 import { HFBackend, HF_DEFAULT_MODEL } from './backends/hf';
 import type { LLMBackend } from './backends/shared';
 import { PhantomInkGenerator } from './generator/generator';
@@ -25,9 +25,15 @@ export function toGameQuestions(
   });
 }
 
-function buildBackend(settings: Settings): LLMBackend {
+function buildBackend(settings: Settings, onEvent?: (msg: string) => void): LLMBackend {
+  // Groq goes through the model-chain fallback backend (docs/LLM-RESILIENCE.md):
+  // on 429/413/5xx it switches model instead of making the user wait.
   return settings.backend === 'groq'
-    ? new GroqBackend(settings.apiKey, settings.model || GROQ_DEFAULT_MODEL)
+    ? new GroqFallbackBackend(
+        settings.apiKey,
+        GroqFallbackBackend.withPreferred(settings.model || undefined, 'generator'),
+        { onEvent },
+      )
     : new HFBackend(settings.apiKey, settings.model || HF_DEFAULT_MODEL);
 }
 
@@ -193,18 +199,22 @@ export function renderSolverHelper(root: HTMLElement, initialText = ''): void {
 
     runBtn.disabled = true;
     results.innerHTML = '';
-    status.innerHTML = '<span class="pi-solver-thinking">🤔 階段 1/2：解讀線索中⋯⋯（使用 Qwen）</span>';
+    status.innerHTML = '<span class="pi-solver-thinking">🤔 階段 1/2：解讀線索中⋯⋯</span>';
     try {
-      // Stage 1: Qwen3-32B for bopomofo-to-text decoding (stronger Chinese understanding)
-      const qwenBackend = backend === 'groq'
-        ? new GroqBackend(apiKey, 'qwen/qwen3-32b')
+      // Rate-limit fallback events (model switches, waits) surface here.
+      const showEvent = (msg: string) => {
+        status.innerHTML = `<span class="pi-solver-thinking">${escapeHtml(msg)}</span>`;
+      };
+      // Stage 1: bopomofo-to-text decoding — qwen-first chain (strongest bopomofo).
+      const stage1Backend = backend === 'groq'
+        ? new GroqFallbackBackend(apiKey, 'solverStage1', { onEvent: showEvent })
         : new HFBackend(apiKey, model || HF_DEFAULT_MODEL);
-      // Stage 2: Llama for final answer guessing (avoids reasoning token exhaustion)
-      const llamaBackend = backend === 'groq'
-        ? new GroqBackend(apiKey, 'llama-3.3-70b-versatile')
+      // Stage 2: final answer guessing — non-reasoning-first chain (no think-token burn).
+      const stage2Backend = backend === 'groq'
+        ? new GroqFallbackBackend(apiKey, 'solverStage2', { onEvent: showEvent })
         : new HFBackend(apiKey, model || HF_DEFAULT_MODEL);
 
-      const result = await solvePuzzle(qwenBackend, llamaBackend, text, (_stage, msg) => {
+      const result = await solvePuzzle(stage1Backend, stage2Backend, text, (_stage, msg) => {
         status.innerHTML = `<span class="pi-solver-thinking">🤔 ${escapeHtml(msg)}</span>`;
       });
 
@@ -256,7 +266,7 @@ async function startGame(
 
   renderLoading(root);
   try {
-    const generator = new PhantomInkGenerator(buildBackend(settings));
+    const generator = new PhantomInkGenerator(buildBackend(settings, progressLog));
     const result = await generator.generate({
       answerMode: settings.answerMode ?? 'ai',
       numQuestions: settings.numQuestions ?? 10,
