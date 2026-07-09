@@ -114,12 +114,16 @@ function wire(container: HTMLElement): void {
     }
   });
 
-  // Clear all bank selections
+  // Clear all bank selections + paste + custom list (one button to wipe it all).
   container.querySelector('.pi-bank-clear')?.addEventListener('click', () => {
     container.querySelectorAll<HTMLInputElement>('.pi-bank-item input').forEach((cb) => {
       cb.checked = false;
     });
     container.querySelector('.pi-custom-list')!.innerHTML = '';
+    const paste = container.querySelector<HTMLTextAreaElement>('.pi-group-paste');
+    if (paste) paste.value = '';
+    const result = container.querySelector<HTMLElement>('.pi-group-result');
+    if (result) result.textContent = '';
     delete container.dataset.groupTags;
     updateBankCount(container);
     revalidate();

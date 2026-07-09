@@ -358,7 +358,16 @@ export function renderHostSetup(
   });
   document.querySelector('.pi-bank-list')?.addEventListener('change', updateBankCount);
   document.querySelector('.pi-bank-clear')?.addEventListener('click', () => {
+    // 「清除」= 一鍵回到空白狀態：題庫勾選、自訂問題、貼上題組、解析狀態全清。
     document.querySelectorAll<HTMLInputElement>('.pi-bank-list .pi-bank-item input').forEach((cb) => { cb.checked = false; });
+    const customList = document.querySelector('.pi-custom-list');
+    if (customList) customList.innerHTML = '';
+    const pasteArea = document.getElementById('pi-host-paste') as HTMLTextAreaElement | null;
+    if (pasteArea) pasteArea.value = '';
+    const statusEl = document.getElementById('pi-host-parse-status');
+    if (statusEl) statusEl.textContent = '';
+    const resultEl = document.getElementById('pi-host-parse-result');
+    if (resultEl) resultEl.innerHTML = '';
     updateBankCount();
   });
 

@@ -42,4 +42,29 @@ describe('questionSetup', () => {
     const el = mount();
     expect(refreshSetupValidity(el)).toBe(true);
   });
+
+  it('清除按鈕 wipes bank checks, custom list, paste textarea, and groupTags', () => {
+    // 使用者要求：「清除」必須一鍵把題庫勾選、自訂問題、貼上題組、解析結果全清。
+    const el = mount({
+      pickedBankQuestions: [QUESTION_BANK[0], QUESTION_BANK[1]],
+      customQuestions: ['自訂A', '自訂B'],
+      groupTags: [{ group: 1, index: 1, text: QUESTION_BANK[0] }],
+    });
+
+    // Sanity:清除前至少有勾選 + 自訂列 + 貼上區內容。
+    expect(el.querySelectorAll('.pi-bank-item input:checked').length).toBeGreaterThan(0);
+    expect(el.querySelectorAll('.pi-custom-row').length).toBeGreaterThan(0);
+    const paste = el.querySelector<HTMLTextAreaElement>('.pi-group-paste')!;
+    paste.value = '第 1 組\n某題？';
+    expect(paste.value).not.toBe('');
+    expect(el.dataset.groupTags).toBeDefined();
+
+    // Click 清除。
+    el.querySelector<HTMLButtonElement>('.pi-bank-clear')?.click();
+
+    expect(el.querySelectorAll('.pi-bank-item input:checked').length).toBe(0);
+    expect(el.querySelectorAll('.pi-custom-row').length).toBe(0);
+    expect(paste.value).toBe('');
+    expect(el.dataset.groupTags).toBeUndefined();
+  });
 });

@@ -341,6 +341,36 @@ describe('hostMode / renderHostCommands', () => {
   });
 });
 
+describe('hostMode / renderHostSetup — 清除按鈕', () => {
+  it('wipes everything: bank checks, custom list, paste textarea, parse status', () => {
+    // 使用者要求「清除」必須把貼上題組都清空 — 不只清題庫勾選。
+    const existing: Partial<Settings> = {
+      groupTags: [{ group: 1, index: 1, text: '提到它，最先閃過您腦海的是哪個字詞？' }],
+      pickedBankQuestions: ['提到它，最先閃過您腦海的是哪個字詞？'],
+      customQuestions: ['自訂A', '自訂B'],
+    };
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    renderHostSetup(el, existing as Settings);
+
+    // Sanity: pre-fill paste textarea triggers updateParseStatus too.
+    const paste = el.querySelector<HTMLTextAreaElement>('#pi-host-paste')!;
+    expect(paste.value).toContain('提到它');
+    expect(el.querySelectorAll('.pi-bank-item input:checked').length).toBeGreaterThan(0);
+    expect(el.querySelectorAll('.pi-custom-row').length).toBe(2);
+    expect(el.querySelector('#pi-host-parse-status')?.textContent).not.toBe('');
+
+    // Click 清除.
+    el.querySelector<HTMLButtonElement>('.pi-bank-clear')?.click();
+
+    expect(el.querySelectorAll('.pi-bank-item input:checked').length).toBe(0);
+    expect(el.querySelectorAll('.pi-custom-row').length).toBe(0);
+    expect(el.querySelector<HTMLTextAreaElement>('#pi-host-paste')?.value).toBe('');
+    expect(el.querySelector('#pi-host-parse-status')?.textContent).toBe('');
+    expect(el.querySelector('#pi-host-parse-result')?.innerHTML).toBe('');
+  });
+});
+
 describe('hostMode / rebuildPasteText', () => {
   it('rebuilds 第 N 組 headers and lines from groupTags (R7)', () => {
     const out = rebuildPasteText([
