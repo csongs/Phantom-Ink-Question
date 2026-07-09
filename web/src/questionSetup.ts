@@ -1,5 +1,4 @@
 import { parseGroupedQuestions, matchToBank, type GroupedQuestion } from './groupPaste';
-import { toBopomofo } from './bopomofo';
 import { QUESTION_BANK } from './generator/prompts';
 import { validateQuestionSetup } from './settings';
 import { escapeHtml } from './game';
@@ -42,13 +41,6 @@ export function renderQuestionSetup(
         <textarea class="pi-group-paste" rows="5" placeholder="第 1 組&#10;如果暫時沒有它，可以用什麼替代？&#10;有什麼東西的危險程度與它相仿？&#10;⋯"></textarea>
         <button type="button" class="pi-group-parse">解析並勾選</button>
         <div class="pi-group-result"></div>
-      </div>
-
-      <div class="pi-bpmf-tool">
-        <label>文字轉注音（破音字處理）</label>
-        <textarea class="pi-bpmf-input" rows="3" placeholder="輸入中文文字，例如：音樂、銀行、頭髮"></textarea>
-        <button type="button" class="pi-bpmf-convert">轉換</button>
-        <div class="pi-bpmf-output"></div>
       </div>
 
       <div class="pi-bank-header">
@@ -178,19 +170,6 @@ function wire(container: HTMLElement): void {
 
     updateBankCount(container);
     refreshSetupValidity(container);
-  });
-
-  // Bopomofo converter
-  container.querySelector('.pi-bpmf-convert')?.addEventListener('click', () => {
-    const input = container.querySelector<HTMLTextAreaElement>('.pi-bpmf-input')!;
-    const output = container.querySelector<HTMLElement>('.pi-bpmf-output')!;
-    const text = input.value.trim();
-    if (!text) {
-      output.textContent = '請輸入文字';
-      return;
-    }
-    const result = toBopomofo(text);
-    output.innerHTML = `<span class="pi-bpmf-result">${escapeHtml(result)}</span>`;
   });
 }
 

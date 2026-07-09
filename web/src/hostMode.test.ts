@@ -115,9 +115,9 @@ describe('hostMode / renderHostCommands', () => {
     expect(() => btn2?.click()).not.toThrow();
   });
 
-  it('keeps the 切換模式 link clickable after edits (R6)', () => {
+  it('keeps the ← 返回 link clickable after edits (R6)', () => {
     const el = mountCommands();
-    const linkBefore = el.querySelector<HTMLAnchorElement>('#pi-switch-from-commands');
+    const linkBefore = el.querySelector<HTMLAnchorElement>('#pi-host-back');
     expect(linkBefore).toBeTruthy();
 
     // Edit qid — used to trigger renderFullPage and lose listener.
@@ -125,7 +125,7 @@ describe('hostMode / renderHostCommands', () => {
     qid.value = '99';
     qid.dispatchEvent(new Event('input', { bubbles: true }));
 
-    const linkAfter = el.querySelector<HTMLAnchorElement>('#pi-switch-from-commands');
+    const linkAfter = el.querySelector<HTMLAnchorElement>('#pi-host-back');
     expect(linkAfter).toBeTruthy();
     // Same node proves we didn't tear down the DOM.
     expect(linkAfter).toBe(linkBefore);

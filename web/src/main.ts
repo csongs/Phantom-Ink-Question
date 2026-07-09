@@ -12,8 +12,9 @@ import {
   type GameQuestion,
 } from './game';
 import { renderQuestionSetup, readQuestionSetup, refreshSetupValidity } from './questionSetup';
-import { solvePuzzle, type SolveResult } from './solver';
-import { renderHostModeSelection, renderHostSetup } from './hostMode';
+import { solvePuzzle } from './solver';
+import { renderHomeMenu, renderHostSetup } from './hostMode';
+import { describeSolveResultHtml } from './solverTool';
 
 export function toGameQuestions(
   questions: { question: string; reply: string }[],
@@ -100,36 +101,9 @@ function showRules(root: HTMLElement): void {
 // A standalone assistant that reasons from a pasted BLIND progress snapshot.
 // It never receives the answer, so it works on the current game or on progress
 // copied from any other puzzle.
-
-function solveResultHtml(result: SolveResult): string {
-  const perQ = result.perQuestion.length
-    ? `<h4>各題線索推測</h4><ul class="pi-solver-perq">${result.perQuestion
-        .map(
-          (p) =>
-            `<li><span class="pi-solver-q">Q${p.q}</span> → <strong>${escapeHtml(
-              p.replyGuess || '？',
-            )}</strong>${p.note ? `<div class="pi-solver-note">${escapeHtml(p.note)}</div>` : ''}</li>`,
-        )
-        .join('')}</ul>`
-    : '';
-
-  const finals = result.finalGuesses.length
-    ? `<h4>謎底候選（最可能在前）</h4><ol class="pi-solver-finals">${result.finalGuesses
-        .map(
-          (f) =>
-            `<li><strong>${escapeHtml(f.answer)}</strong>${
-              f.reason ? `<div class="pi-solver-note">${escapeHtml(f.reason)}</div>` : ''
-            }</li>`,
-        )
-        .join('')}</ol>`
-    : '<p class="pi-solver-empty">（沒有得到謎底候選，可再多開一些注音後重試）</p>';
-
-  const summary = result.summary
-    ? `<h4>整體思路</h4><p class="pi-solver-summary">${escapeHtml(result.summary)}</p>`
-    : '';
-
-  return perQ + finals + summary;
-}
+//
+// Implementation moved to ./solverTool.ts (shared with the 目錄 page); this
+// file keeps the overlay variant for in-game use.
 
 export function renderSolverHelper(root: HTMLElement, initialText = ''): void {
   const overlay = document.createElement('div');
@@ -219,7 +193,7 @@ export function renderSolverHelper(root: HTMLElement, initialText = ''): void {
       });
 
       status.textContent = '';
-      results.innerHTML = solveResultHtml(result);
+      results.innerHTML = describeSolveResultHtml(result);
     } catch (err) {
       status.textContent = '❌ ' + (err instanceof Error ? err.message : String(err));
     } finally {
@@ -376,8 +350,8 @@ export function showSettingsScreen(root: HTMLElement): void {
 
   root.innerHTML = `
     <div class="pi-settings open">
-      <div style="text-align:right;font-size:12px;margin-bottom:12px;">
-        <a href="#" id="pi-switch-mode" style="color:var(--pi-text-dim);text-decoration:none;">⇄ 切換模式</a>
+      <div style="display:flex;align-items:center;font-size:12px;margin-bottom:12px;">
+        <a href="#" id="pi-player-back" style="color:var(--pi-text-dim);text-decoration:none;">← 返回</a>
       </div>
       <h2>幽靈筆跡 👻</h2>
 
@@ -507,15 +481,9 @@ export function showSettingsScreen(root: HTMLElement): void {
     renderSolverHelper(root);
   });
 
-  // Mode switch link
-  document.getElementById('pi-switch-mode')?.addEventListener('click', (e) => {
+  document.getElementById('pi-player-back')?.addEventListener('click', (e) => {
     e.preventDefault();
-    const s = loadSettings();
-    if (s) {
-      s.mode = undefined;
-      saveSettings(s);
-    }
-    window.location.reload();
+    renderHomeMenu(root);
   });
 }
 
@@ -525,16 +493,8 @@ function main(): void {
 
   const settings = loadSettings();
   if (!settings || !settings.mode) {
-    // First-time visitor, schema mismatch, OR user cleared mode — show mode selection.
-    // R2 fix: clearModeAndReload only flips settings.mode to undefined, which must
-    // land here, not route silently into the player screen.
-    renderHostModeSelection(root, (mode) => {
-      const s = loadSettings() ?? { backend: 'groq', apiKey: '', model: '' } as Settings;
-      s.mode = mode;
-      saveSettings(s);
-      // Reload so main() re-routes correctly (player vs host flow).
-      window.location.reload();
-    });
+    // First-time visitor, schema mismatch, OR user cleared mode — home = 目錄。
+    renderHomeMenu(root);
     return;
   }
 
