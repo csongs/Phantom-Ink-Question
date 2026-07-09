@@ -11,14 +11,21 @@ export interface QuestionSetupValue {
   groupTags?: GroupedQuestion[];
 }
 
+export interface QuestionSetupOptions {
+  /** 出題者模式才需要「貼上題組」功能(自動勾題庫+記組別編號);玩家模式跳過。 */
+  mode?: 'host' | 'player';
+}
+
 export function renderQuestionSetup(
   container: HTMLElement,
   initial: Partial<QuestionSetupValue> = {},
+  options: QuestionSetupOptions = {},
 ): void {
   const N = initial.numCandidates ?? 30;
   const M = initial.numQuestions ?? 10;
   const picked = new Set(initial.pickedBankQuestions ?? []);
   const customs = initial.customQuestions ?? [];
+  const showGroupPaste = options.mode === 'host';
 
   const bankItems = QUESTION_BANK.map(
     (q) =>
@@ -36,7 +43,7 @@ export function renderQuestionSetup(
       <label>使用題數量（遊戲最終題數）</label>
       <input id="pi-num-questions" type="number" min="1" value="${M}">
 
-      <div class="pi-group-paste-area">
+      <div class="pi-group-paste-area"${showGroupPaste ? '' : ' style="display:none"'}>
         <label>貼上題組（自動勾選題庫並記住組別編號）</label>
         <textarea class="pi-group-paste" rows="5" placeholder="第 1 組&#10;如果暫時沒有它，可以用什麼替代？&#10;有什麼東西的危險程度與它相仿？&#10;⋯"></textarea>
         <button type="button" class="pi-group-parse">解析並勾選</button>

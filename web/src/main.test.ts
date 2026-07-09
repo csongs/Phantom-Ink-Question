@@ -60,4 +60,15 @@ describe('settings screen question-setup', () => {
     const start = root.querySelector('#pi-start') as HTMLButtonElement;
     expect(start.disabled).toBe(true);
   });
+
+  it('does NOT render the group-paste area in player mode', () => {
+    // 使用者要求:玩家模式不需要「貼上題組」(那是出題者才需要的)。
+    const root = document.getElementById('app')!;
+    showSettingsScreen(root);
+    const pasteArea = root.querySelector('.pi-group-paste-area') as HTMLElement;
+    expect(pasteArea).toBeTruthy();
+    expect(pasteArea.style.display).toBe('none');
+    expect(root.querySelector('.pi-group-paste')).toBeTruthy(); // 元素仍在(只是隱藏)
+    expect(root.querySelector('.pi-group-parse')).toBeTruthy();
+  });
 });

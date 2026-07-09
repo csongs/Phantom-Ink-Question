@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { renderQuestionSetup, readQuestionSetup, refreshSetupValidity } from './questionSetup';
 import { QUESTION_BANK } from './generator/prompts';
 
-function mount(initial?: Parameters<typeof renderQuestionSetup>[1]): HTMLElement {
+function mount(initial?: Parameters<typeof renderQuestionSetup>[1], options?: Parameters<typeof renderQuestionSetup>[2]): HTMLElement {
   const el = document.createElement('div');
-  renderQuestionSetup(el, initial);
+  renderQuestionSetup(el, initial, options);
   document.body.appendChild(el);
   return el;
 }
@@ -66,5 +66,21 @@ describe('questionSetup', () => {
     expect(el.querySelectorAll('.pi-custom-row').length).toBe(0);
     expect(paste.value).toBe('');
     expect(el.dataset.groupTags).toBeUndefined();
+  });
+
+  it('hides the group-paste area when mode is player', () => {
+    // 使用者要求:玩家模式不需要「貼上題組」(那是出題者才需要的)。
+    const el = mount({}, { mode: 'player' });
+    const pasteArea = el.querySelector('.pi-group-paste-area') as HTMLElement;
+    expect(pasteArea).toBeTruthy();
+    expect(pasteArea.style.display).toBe('none');
+  });
+
+  it('shows the group-paste area when mode is host', () => {
+    const el = mount({}, { mode: 'host' });
+    const pasteArea = el.querySelector('.pi-group-paste-area') as HTMLElement;
+    expect(pasteArea).toBeTruthy();
+    expect(pasteArea.style.display).not.toBe('none');
+    expect(el.querySelector('.pi-group-paste')).toBeTruthy();
   });
 });

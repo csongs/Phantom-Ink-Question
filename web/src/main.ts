@@ -13,7 +13,7 @@ import {
 } from './game';
 import { renderQuestionSetup, readQuestionSetup, refreshSetupValidity } from './questionSetup';
 import { solvePuzzle } from './solver';
-import { renderHomeMenu, renderHostSetup } from './hostMode';
+import { renderHomeMenu } from './hostMode';
 import { describeSolveResultHtml } from './solverTool';
 
 export function toGameQuestions(
@@ -432,7 +432,7 @@ export function showSettingsScreen(root: HTMLElement): void {
       pickedBankQuestions: existing?.pickedBankQuestions,
       customQuestions: existing?.customQuestions,
       groupTags: existing?.groupTags,
-    });
+    }, { mode: 'player' });
     const startBtn = document.getElementById('pi-start') as HTMLButtonElement | null;
     const syncStart = () => { if (startBtn) startBtn.disabled = !refreshSetupValidity(setupContainer); };
     setupContainer.addEventListener('input', syncStart);
@@ -491,18 +491,10 @@ function main(): void {
   const root = document.getElementById('app');
   if (!root) throw new Error('#app not found');
 
-  const settings = loadSettings();
-  if (!settings || !settings.mode) {
-    // First-time visitor, schema mismatch, OR user cleared mode — home = 目錄。
-    renderHomeMenu(root);
-    return;
-  }
-
-  if (settings.mode === 'host') {
-    renderHostSetup(root, settings);
-  } else {
-    showSettingsScreen(root);
-  }
+  // 永遠從首頁開始:重新整理 / 開新分頁 都回到首頁。
+  // 不論上次儲存的是 host 還是 player mode,使用者都從目錄手動進入。
+  // (舊版會依 settings.mode 直接跳畫面,造成「為什麼刷新就跑進模式」的困擾。)
+  renderHomeMenu(root);
 }
 
 if (typeof document !== 'undefined' && document.getElementById('app')) {
