@@ -25,6 +25,9 @@ build/
 Thumbs.db
 .DS_Store
 
+# Local backups made before agents modify existing files (CLAUDE.md rule 8)
+_backups/
+
 # Temp
 _debug_out.txt
 _polyphone_check.txt
