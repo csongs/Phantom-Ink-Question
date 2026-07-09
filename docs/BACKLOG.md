@@ -5,7 +5,7 @@
 
 ## P1（高價值）
 
-- [ ] **出題者模式（Host Mode）**：開場模式分流＋BOT 指令頁（`/ghostink clue 題目id:N 題組:G 選項:O 注音:X`）＋單題重生候選。**完整規格：`docs/superpowers/plans/2026-07-09-host-mode.md`**（四項關鍵決策已於 2026-07-09 與使用者確認，寫在文件裡，不要重問）。分 3 個 Phase，各自可獨立 commit，照 Phase 順序做。
+- [ ] **出題者模式修正輪（R1–R9）**：Phase 1–3 已實作（commits 7ab8933、07aac0c）但驗收發現 4 個高嚴重度問題（模式切換鎖死、手動補編號被重繪清空、regenerateReply 無 CODE 硬擋＝重演 FL-1、再生按鈕重繪後失效）。**修正清單＋驗收：`docs/superpowers/plans/2026-07-09-host-mode.md` 末尾「Review 發現與修正清單」**。R1（候選累積 vs 取代式）需使用者先裁決，其餘照清單做。
 - [x] **2026-07-09 — simulatePlayer 呼叫量重構**：從每格一請求改為每題一請求（≤11 請求，合規 ≤15）。Prompt 列出所有揭露步驟讓模型自行模擬。
 - [x] **2026-07-09 — README.md 更新**：重寫為以 web/ 為主體，移除 Python 用法與「由難到易」描述。備份於 `_backups/README.md.2026-07-09.bak`。
 - [x] **2026-07-09 — memory/user_design_intent.md 過時警告**：已加 ⚠️ 提示行，備份到 `_backups/`。
