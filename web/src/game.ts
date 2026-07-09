@@ -327,6 +327,28 @@ export function renderGame(
     html += '</div>';
   }
 
+  // 使用者要求:動作按鈕（顯示墨水 / 下一題 / 提交謎底 / 老天有眼 / 放棄）必須
+  // 在題目卡片「正下方」,而不是被歷史 QA 區塊擠到下面。
+  if (!s.gameOver) {
+    const inkDisabled = allDone || s.finalRevealed ? 'disabled' : '';
+    const nextDisabled = s.finalRevealed ? 'disabled' : '';
+    const hasPast = cur > 0 && s.visited.length > 0;
+    const oracleDisabled = s.oracleCharges <= 0 || !hasPast ? 'disabled' : '';
+    html += `<div class="pi-btns">
+      <div class="pi-btns-row"><button class="pi-btn pi-btn-ink" data-action="reveal-ink" ${inkDisabled}>🖋 顯示墨水</button></div>
+      <div class="pi-btns-row">`;
+    if (showFinish) html += '<button class="pi-btn pi-btn-finish" data-action="finish-clues">📜 完成線索</button>';
+    if (!isLast && !s.finalRevealed) {
+      html += `<button class="pi-btn pi-btn-next" data-action="next-question" ${nextDisabled}>➡ 下一題</button>`;
+    }
+    html += `<button class="pi-btn pi-btn-answer" data-action="show-answer">🎯 提交謎底</button>
+      <button class="pi-btn pi-btn-oracle" data-action="open-oracle" ${oracleDisabled}>👁 老天有眼</button>
+    </div>
+    <div class="pi-btns-row">
+      <button class="pi-btn pi-btn-finish" data-action="give-up">🏳️ 放棄／公布答案</button>
+    </div></div>`;
+  }
+
   if (s.visited.length > 0) {
     html += '<div class="pi-clues">';
     for (let vi = 0; vi < s.visited.length; vi++) {
@@ -354,27 +376,6 @@ export function renderGame(
     }
     html += '</div>';
   }
-
-  if (!s.gameOver) {
-    const inkDisabled = allDone || s.finalRevealed ? 'disabled' : '';
-    const nextDisabled = s.finalRevealed ? 'disabled' : '';
-    const hasPast = cur > 0 && s.visited.length > 0;
-    const oracleDisabled = s.oracleCharges <= 0 || !hasPast ? 'disabled' : '';
-    html += `<div class="pi-btns">
-      <div class="pi-btns-row"><button class="pi-btn pi-btn-ink" data-action="reveal-ink" ${inkDisabled}>🖋 顯示墨水</button></div>
-      <div class="pi-btns-row">`;
-    if (showFinish) html += '<button class="pi-btn pi-btn-finish" data-action="finish-clues">📜 完成線索</button>';
-    if (!isLast && !s.finalRevealed) {
-      html += `<button class="pi-btn pi-btn-next" data-action="next-question" ${nextDisabled}>➡ 下一題</button>`;
-    }
-    html += `<button class="pi-btn pi-btn-answer" data-action="show-answer">🎯 提交謎底</button>
-      <button class="pi-btn pi-btn-oracle" data-action="open-oracle" ${oracleDisabled}>👁 老天有眼</button>
-    </div>
-    <div class="pi-btns-row">
-      <button class="pi-btn pi-btn-finish" data-action="give-up">🏳️ 放棄／公布答案</button>
-    </div></div>`;
-  }
-
   if (!s.gameOver) {
     html += `<div class="pi-answer-box${s.answerBoxOpen ? ' open' : ''}" id="pi-answer-box">
       <input id="pi-input" placeholder="輸入謎底…">
