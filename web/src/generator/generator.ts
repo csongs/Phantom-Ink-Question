@@ -22,7 +22,7 @@ import {
   simulatorUserPrompt,
 } from './prompts';
 import { convertPunctuation, toTraditional } from '../zhconv';
-import { countBopomofoCells, toBopomofoCells } from '../bopomofo';
+import { toBopomofoCells } from '../bopomofo';
 
 export type ProgressCallback = (msg: string) => void;
 
@@ -41,7 +41,7 @@ export interface GenerateOptions {
 
 export class PhantomInkGenerator {
   constructor(
-    private llm: LLMBackend,
+    public readonly llm: LLMBackend,
     private maxRetries = 3,
   ) {}
 
@@ -60,11 +60,11 @@ export class PhantomInkGenerator {
     return JSON.parse(reply);
   }
 
-  private postProcess(qs: QuestionSet): QuestionSet {
-    qs.answer = toTraditional(qs.answer);
+  private async postProcess(qs: QuestionSet): Promise<QuestionSet> {
+    qs.answer = await toTraditional(qs.answer);
     for (const q of qs.questions) {
-      q.question = convertPunctuation(toTraditional(q.question));
-      q.reply = convertPunctuation(toTraditional(q.reply));
+      q.question = convertPunctuation(await toTraditional(q.question));
+      q.reply = convertPunctuation(await toTraditional(q.reply));
       if (q.reply && !q.reply.trimEnd().endsWith('。')) {
         q.reply = q.reply.trimEnd() + '。';
       }
@@ -124,7 +124,7 @@ export class PhantomInkGenerator {
     }));
 
     let qs: QuestionSet = { answer: raw.answer, questions };
-    qs = this.postProcess(qs);
+    qs = await this.postProcess(qs);
 
     // Deterministically guarantee forced questions are present.
     if (forced.length) {
@@ -186,71 +186,51 @@ export class PhantomInkGenerator {
     for (let i = 0; i < questionSet.questions.length; i++) {
       const qItem = questionSet.questions[i];
       const roundNum = i + 1;
-      const totalCells = countBopomofoCells(qItem.reply);
       const cells = toBopomofoCells(qItem.reply);
-      let revealedCount = 0;
-      let guessed = false;
-      let lastRaw: { current_best_guess?: string } = {};
 
-      for (let revealStep = 1; revealStep <= totalCells; revealStep++) {
-        revealedCount = revealStep;
+      const historyLines = rounds.map(
+        (r, j) =>
+          `Q${j + 1}: ${r.question}\n回答注音: ${r.inkRevealed}\n你的猜測: ${r.playerGuess || '（尚未猜測）'}`,
+      );
+      const history = historyLines.length ? historyLines.join('\n\n') : '（尚無歷史）';
 
-        const historyLines = rounds.map(
-          (r, j) =>
-            `Q${j + 1}: ${r.question}\n回答注音: ${r.inkRevealed}\n你的猜測: ${r.playerGuess || '（尚未猜測）'}`,
-        );
-        const history = historyLines.length ? historyLines.join('\n\n') : '（尚無歷史）';
+      const prompt = simulatorUserPrompt(
+        categoryHint,
+        roundNum,
+        history,
+        qItem.question,
+        cells,
+      );
 
-        const revealedDisplay = [
-          ...cells.slice(0, revealedCount),
-          ...Array(totalCells - revealedCount).fill('▢'),
-        ].join(' ');
+      // One LLM call per question — the model simulates all reveal steps internally
+      // and tells us at which step it would first want to guess.
+      const raw = await this.jsonChat(
+        [
+          { role: 'system', content: SIMULATOR_SYSTEM_PROMPT },
+          { role: 'user', content: prompt },
+        ],
+        0.5,
+      );
 
-        const prompt = simulatorUserPrompt(
-          categoryHint,
-          roundNum,
-          history,
-          qItem.question,
-          revealedDisplay,
-          totalCells,
-        );
+      const guessStep: number | null = raw.guess_step ?? null;
+      const playerGuess: string = raw.guess ?? '';
+      const guessedCorrectly = guessStep != null && playerGuess.trim() === questionSet.answer;
 
-        const raw = await this.jsonChat(
-          [
-            { role: 'system', content: SIMULATOR_SYSTEM_PROMPT },
-            { role: 'user', content: prompt },
-          ],
-          0.5,
-        );
-        lastRaw = raw;
-        const wantToGuess = raw.want_to_guess ?? false;
-        const guess: string = raw.current_best_guess ?? '';
-
-        if (wantToGuess && guess.trim() === questionSet.answer) {
-          guessed = true;
-          break;
-        }
-        if (wantToGuess && guess.trim() !== questionSet.answer) {
-          guessed = false;
-          break;
-        }
-      }
-
-      const revealedDisplayFinal = [
-        ...cells.slice(0, revealedCount),
-        ...Array(totalCells - revealedCount).fill('▢'),
-      ].join(' ');
+      const revealedCells = guessStep != null
+        ? [...cells.slice(0, guessStep), ...Array(cells.length - guessStep).fill('▢')]
+        : cells.map(() => '▢');
+      const revealedDisplay = revealedCells.join(' ');
 
       rounds.push({
         roundNumber: roundNum,
         question: qItem.question,
         reply: qItem.reply,
-        inkRevealed: revealedDisplayFinal,
-        playerGuess: lastRaw.current_best_guess ?? '',
-        guessedCorrectly: guessed,
+        inkRevealed: revealedDisplay,
+        playerGuess,
+        guessedCorrectly,
       });
 
-      if (guessed) break;
+      if (guessedCorrectly) break;
     }
 
     const lastCorrect = [...rounds].reverse().find((r) => r.guessedCorrectly);
@@ -293,7 +273,7 @@ export class PhantomInkGenerator {
       1024,
       (rawReply) => onProgress?.(`🔎 AI 原始回應（謎底）：${rawReply}`),
     );
-    return toTraditional((raw.answer ?? '').trim());
+    return await toTraditional((raw.answer ?? '').trim());
   }
 
   /** Re-checks a generated answer for Mainland-Chinese wording that character-level zhconv can't catch. */
@@ -378,7 +358,7 @@ export class PhantomInkGenerator {
       }
     }
     qs.questions = merged;
-    this.postProcess(qs);
+    await this.postProcess(qs);
     return qs;
   }
 
@@ -452,7 +432,7 @@ export class PhantomInkGenerator {
         if (localeCheck.isMainlandTerm) {
           // If the check already told us the Taiwan equivalent, swap it in
           // instead of paying for a whole new generation round.
-          const twTerm = toTraditional((localeCheck.taiwanTerm ?? '').trim());
+          const twTerm = await toTraditional((localeCheck.taiwanTerm ?? '').trim());
           if (twTerm) {
             onProgress?.(`⚠️  「${candidate}」為中國大陸用語，改用臺灣用語「${twTerm}」（${localeCheck.reason}）`);
             answer = twTerm;
@@ -500,7 +480,7 @@ export class PhantomInkGenerator {
       }
 
       for (let fixAttempt = 0; fixAttempt < 3; fixAttempt++) {
-        this.postProcess(questionSet);
+        await this.postProcess(questionSet);
 
         const bad = new Set<number>();
         const replies = questionSet.questions.map((q) => q.reply);
@@ -548,7 +528,7 @@ export class PhantomInkGenerator {
           for (const [i, reply] of newReplies) {
             questionSet.questions[i] = { ...questionSet.questions[i], reply };
           }
-          this.postProcess(questionSet);
+          await this.postProcess(questionSet);
         }
       }
 

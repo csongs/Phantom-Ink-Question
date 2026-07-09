@@ -1,6 +1,6 @@
 // web/src/main.ts
 import { loadSettings, saveSettings, type Settings } from './settings';
-import { GroqFallbackBackend } from './backends/fallbackGroq';
+import { GroqFallbackBackend, CHAINS } from './backends/fallbackGroq';
 import { HFBackend, HF_DEFAULT_MODEL } from './backends/hf';
 import type { LLMBackend } from './backends/shared';
 import { PhantomInkGenerator } from './generator/generator';
@@ -13,7 +13,6 @@ import {
 } from './game';
 import { renderQuestionSetup, readQuestionSetup, refreshSetupValidity } from './questionSetup';
 import { solvePuzzle, type SolveResult } from './solver';
-import { buildClueCommands } from './hostCommands';
 
 export function toGameQuestions(
   questions: { question: string; reply: string }[],
@@ -276,30 +275,17 @@ async function startGame(
       onProgress: progressLog,
       answer: humanAnswer,
     });
+    const usedModel = generator.llm.lastUsedModel;
+    if (usedModel) progressLog(`🤖 本次由 ${usedModel} 完成`);
+
     const gameQuestions = toGameQuestions(result.questions);
     const game = new PhantomInkGame(gameQuestions, result.answer);
 
     // Build layout: game container + log section (collapsed)
     const logHtml = logLines.map((l) => `<div class="pi-log-line">${escapeHtml(l)}</div>`).join('');
-    const clueCommands = settings.groupTags?.length
-      ? buildClueCommands(result.questions, settings.groupTags)
-      : [];
-    const hostCmdsHtml = clueCommands.length
-      ? `
-        <div class="pi-host-cmds">
-          <div class="pi-log-header">
-            <div class="pi-host-cmds-toggle pi-log-toggle" tabindex="0" role="button">
-              <span class="pi-log-toggle-arrow">▶</span> 📢 主持指令（${clueCommands.length} 條）
-            </div>
-            <button class="pi-host-cmds-copy pi-log-copy" title="複製全部指令">📋</button>
-          </div>
-          <pre class="pi-host-cmds-body">${escapeHtml(clueCommands.join('\n'))}</pre>
-        </div>`
-      : '';
 
     root.innerHTML = `
       <div id="pi-game-container"></div>
-      ${hostCmdsHtml}
       <div class="pi-log-below">
         <div class="pi-log-header">
           <div class="pi-log-toggle" tabindex="0" role="button">
@@ -334,20 +320,6 @@ async function startGame(
     logSection.querySelector('.pi-log-copy')?.addEventListener('click', () => {
       navigator.clipboard.writeText(logLines.join('\n')).catch(() => {});
     });
-
-    // Host commands: toggle + copy
-    const hostCmds = root.querySelector<HTMLElement>('.pi-host-cmds');
-    if (hostCmds) {
-      const cmdToggle = hostCmds.querySelector<HTMLElement>('.pi-host-cmds-toggle');
-      const cmdBody = hostCmds.querySelector<HTMLElement>('.pi-host-cmds-body');
-      cmdToggle?.addEventListener('click', () => {
-        cmdBody?.classList.toggle('open');
-        cmdToggle.querySelector('.pi-log-toggle-arrow')?.classList.toggle('open');
-      });
-      hostCmds.querySelector('.pi-host-cmds-copy')?.addEventListener('click', () => {
-        navigator.clipboard.writeText(clueCommands.join('\n')).catch(() => {});
-      });
-    }
   } catch (err) {
     const message = describeGenerationError(err);
     const logHtml = logLines.map((l) => `<div class="pi-log-line">${escapeHtml(l)}</div>`).join('');
@@ -432,7 +404,10 @@ export function showSettingsScreen(root: HTMLElement): void {
 
       <div class="pi-settings-group">
         <label>Model（留空使用預設）</label>
-        <input id="pi-model" type="text" value="${model}">
+        <input id="pi-model" type="text" value="${model}" placeholder="例：llama-3.3-70b-versatile">
+        <div class="pi-model-info" style="font-size:0.85em;color:#888;margin-top:4px;">
+          Groq 模型鏈（fallback 順序）：${escapeHtml(CHAINS.generator.join(' → '))}
+        </div>
       </div>
 
       <div class="pi-settings-group">

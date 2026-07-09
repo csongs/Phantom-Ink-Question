@@ -12,7 +12,7 @@ describe('settings', () => {
 
   it('round-trips saved settings through localStorage', () => {
     saveSettings({ backend: 'groq', apiKey: 'gsk_abc', model: 'qwen/qwen3-32b' });
-    expect(loadSettings()).toEqual({ backend: 'groq', apiKey: 'gsk_abc', model: 'qwen/qwen3-32b' });
+    expect(loadSettings()).toEqual({ backend: 'groq', apiKey: 'gsk_abc', model: 'qwen/qwen3-32b', schemaVersion: 1 });
   });
 
   it('returns null if the stored value is corrupted JSON', () => {
@@ -79,7 +79,7 @@ describe('settings persistence of question-setup fields', () => {
       pickedBankQuestions: ['它是何種顏色？'], customQuestions: ['它配什麼飲料？'],
     });
     expect(loadSettings()).toEqual({
-      backend: 'groq', apiKey: 'k', model: '',
+      backend: 'groq', apiKey: 'k', model: '', schemaVersion: 1,
       numCandidates: 20, numQuestions: 8,
       pickedBankQuestions: ['它是何種顏色？'], customQuestions: ['它配什麼飲料？'],
     });

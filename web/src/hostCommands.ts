@@ -1,28 +1,62 @@
 // web/src/hostCommands.ts
 //
-// Builds host-side bot commands from generated questions and their
-// (group, index) tags. Reply bopomofo is joined without spaces and without
-// the trailing 。 cell, e.g. `/ghostink clue 1 3 ㄐㄧㄢˉㄘㄞˋ`.
+// BOT clue command builder — the single source of truth for the
+// `/ghostink clue 題目id:... 題組:... 選項:... 注音:...` format.
+// If the BOT changes the parameter syntax, only this file needs updating.
 import { toBopomofoCells } from './bopomofo';
-import { normalizeQuestion, type GroupedQuestion } from './groupPaste';
 
-export const CLUE_CMD_PREFIX = '/ghostink clue';
+export interface ClueParams {
+  /** Command prefix without leading slash, e.g. 'ghostink' or 'phantomink'. */
+  prefix: string;
+  /** Question-set id the BOT uses to look up this puzzle. */
+  questionId: string;
+  /** Group number (1-based). */
+  group: number;
+  /** Option index within the group (1-based). */
+  option: number;
+  /** Bopomofo string: toBopomofoCells(reply).join(''). */
+  zhuyin: string;
+}
 
+/** Build a single clue-command string in named-parameter format. */
+export function buildClueCommand(p: ClueParams): string {
+  return `/${p.prefix} clue 題目id:${p.questionId} 題組:${p.group} 選項:${p.option} 注音:${p.zhuyin}`;
+}
+
+/**
+ * Build clue commands for every question that has a matching group tag,
+ * sorted by (group, option). Uses the new named-parameter format.
+ *
+ * Questions whose reply has no bopomofo (non-Han reply) are skipped.
+ * The caller provides the questionId and prefix.
+ */
 export function buildClueCommands(
   questions: { question: string; reply: string }[],
-  tags: GroupedQuestion[],
-  prefix: string = CLUE_CMD_PREFIX,
+  tags: { group: number; index: number; text: string }[],
+  questionId: string,
+  prefix = 'ghostink',
 ): string[] {
-  const tagByNorm = new Map(tags.map((t) => [normalizeQuestion(t.text), t]));
-  const rows: { tag: GroupedQuestion; bpmf: string }[] = [];
+  const tagByNorm = new Map(
+    tags.map((t) => [normalize(t.text), { group: t.group, option: t.index }]),
+  );
+
+  const rows: { group: number; option: number; zhuyin: string }[] = [];
   for (const q of questions) {
-    const tag = tagByNorm.get(normalizeQuestion(q.question));
-    if (!tag) continue; // AI 額外挑的題沒有編號，略過
-    // toBopomofoCells 只轉漢字，句號「。」不會出現在結果裡
-    const bpmf = toBopomofoCells(q.reply).join('');
-    if (!bpmf) continue;
-    rows.push({ tag, bpmf });
+    const tag = tagByNorm.get(normalize(q.question));
+    if (!tag) continue;
+    const zhuyin = toBopomofoCells(q.reply).join('');
+    if (!zhuyin) continue;
+    rows.push({ group: tag.group, option: tag.option, zhuyin });
   }
-  rows.sort((a, b) => a.tag.group - b.tag.group || a.tag.index - b.tag.index);
-  return rows.map((r) => `${prefix} ${r.tag.group} ${r.tag.index} ${r.bpmf}`);
+
+  rows.sort((a, b) => a.group - b.group || a.option - b.option);
+
+  return rows.map((r) =>
+    buildClueCommand({ prefix, questionId, group: r.group, option: r.option, zhuyin: r.zhuyin }),
+  );
+}
+
+/** Lightweight question-text normalizer (matches groupPaste's normalizeQuestion). */
+function normalize(text: string): string {
+  return text.replace(/[\s　]+/g, '').replace(/[？?]$/, '').trim();
 }

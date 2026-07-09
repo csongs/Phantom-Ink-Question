@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> ⚠️ **本檔案有過時內容。** 以下第 1 點提到的「由難到易」已被 raccoon 原則 1 取代——題目應無特定順序，不需要由難到易。所有品質規則以 [docs/QUESTION-QUALITY.md](docs/QUESTION-QUALITY.md) 為準。
+
 使用者針對「靈媒遊戲」(Phantom Ink) 的 AI 題目生成系統，提出了嚴格的三階段流程設計：
 
 1. **出題階段 (AI A)** — 扮演出題老師，根據謎底生成七道由難到易的問答，有嚴格規則約束

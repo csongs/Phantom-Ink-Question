@@ -1,36 +1,83 @@
 // web/src/hostCommands.test.ts
 import { describe, it, expect } from 'vitest';
-import { buildClueCommands, CLUE_CMD_PREFIX } from './hostCommands';
-import type { GroupedQuestion } from './groupPaste';
+import { buildClueCommand, buildClueCommands } from './hostCommands';
+
+describe('buildClueCommand', () => {
+  it('builds the standard ghostink format', () => {
+    const cmd = buildClueCommand({
+      prefix: 'ghostink',
+      questionId: '5',
+      group: 4,
+      option: 1,
+      zhuyin: 'ㄐㄧㄢˉㄔㄠˇ',
+    });
+    expect(cmd).toBe('/ghostink clue 題目id:5 題組:4 選項:1 注音:ㄐㄧㄢˉㄔㄠˇ');
+  });
+
+  it('accepts phantomink prefix', () => {
+    const cmd = buildClueCommand({
+      prefix: 'phantomink',
+      questionId: '5',
+      group: 2,
+      option: 3,
+      zhuyin: 'ㄉㄧˋㄇㄧㄢˋ',
+    });
+    expect(cmd).toBe('/phantomink clue 題目id:5 題組:2 選項:3 注音:ㄉㄧˋㄇㄧㄢˋ');
+  });
+
+  it('accepts a custom prefix string', () => {
+    const cmd = buildClueCommand({
+      prefix: 'mybot',
+      questionId: '7',
+      group: 1,
+      option: 1,
+      zhuyin: 'ㄎㄜˉㄌㄧㄢˊ',
+    });
+    expect(cmd).toBe('/mybot clue 題目id:7 題組:1 選項:1 注音:ㄎㄜˉㄌㄧㄢˊ');
+  });
+
+  it('handles non-numeric questionId', () => {
+    const cmd = buildClueCommand({
+      prefix: 'ghostink',
+      questionId: 'A3',
+      group: 1,
+      option: 2,
+      zhuyin: 'ㄘㄞˋ',
+    });
+    expect(cmd).toBe('/ghostink clue 題目id:A3 題組:1 選項:2 注音:ㄘㄞˋ');
+  });
+});
 
 describe('buildClueCommands', () => {
-  const tags: GroupedQuestion[] = [
+  const tags = [
     { group: 1, index: 2, text: '它會去哪裡？' },
     { group: 1, index: 1, text: '它存放在哪裡？' },
   ];
 
-  it('emits "<prefix> <group> <index> <bopomofo>" sorted by group then index', () => {
+  it('emits commands sorted by (group, option) in the new named-param format', () => {
     const cmds = buildClueCommands(
       [
         { question: '它會去哪裡？', reply: '地面。' },
         { question: '它存放在哪裡？', reply: '天空。' },
       ],
       tags,
+      '5',
     );
     expect(cmds).toEqual([
-      `${CLUE_CMD_PREFIX} 1 1 ㄊㄧㄢˉㄎㄨㄥˉ`,
-      `${CLUE_CMD_PREFIX} 1 2 ㄉㄧˋㄇㄧㄢˋ`,
+      '/ghostink clue 題目id:5 題組:1 選項:1 注音:ㄊㄧㄢˉㄎㄨㄥˉ',
+      '/ghostink clue 題目id:5 題組:1 選項:2 注音:ㄉㄧˋㄇㄧㄢˋ',
     ]);
   });
 
-  it('excludes the trailing 。 and joins bopomofo without spaces', () => {
+  it('excludes trailing 。 and joins bopomofo without spaces', () => {
     const cmds = buildClueCommands(
       [{ question: '它會去哪裡？', reply: '地面。' }],
       [{ group: 3, index: 1, text: '它會去哪裡？' }],
+      '5',
     );
-    expect(cmds).toEqual([`${CLUE_CMD_PREFIX} 3 1 ㄉㄧˋㄇㄧㄢˋ`]);
+    expect(cmds[0]).toBe('/ghostink clue 題目id:5 題組:3 選項:1 注音:ㄉㄧˋㄇㄧㄢˋ');
     expect(cmds[0]).not.toContain('。');
-    expect(cmds[0]).not.toMatch(/ㄉ.+\sㄇ/); // 注音之間無空格
+    expect(cmds[0]).not.toMatch(/ㄉ.+\sㄇ/);
   });
 
   it('skips questions without a tag and questions with empty replies', () => {
@@ -41,16 +88,18 @@ describe('buildClueCommands', () => {
         { question: '它存放在哪裡？', reply: '' },
       ],
       tags,
+      '5',
     );
-    expect(cmds).toEqual([`${CLUE_CMD_PREFIX} 1 2 ㄉㄧˋㄇㄧㄢˋ`]);
+    expect(cmds).toEqual(['/ghostink clue 題目id:5 題組:1 選項:2 注音:ㄉㄧˋㄇㄧㄢˋ']);
   });
 
   it('supports a custom prefix', () => {
     const cmds = buildClueCommands(
       [{ question: '它會去哪裡？', reply: '地面。' }],
       [{ group: 1, index: 1, text: '它會去哪裡？' }],
-      '/mybot clue',
+      '5',
+      'phantomink',
     );
-    expect(cmds[0].startsWith('/mybot clue 1 1 ')).toBe(true);
+    expect(cmds[0]).toBe('/phantomink clue 題目id:5 題組:1 選項:1 注音:ㄉㄧˋㄇㄧㄢˋ');
   });
 });

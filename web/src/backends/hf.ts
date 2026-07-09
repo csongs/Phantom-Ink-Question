@@ -3,6 +3,7 @@ import { extractJson, type ChatMessage, type LLMBackend, type ResponseFormat } f
 
 export const HF_DEFAULT_MODEL = 'Qwen/Qwen2.5-7B-Instruct';
 const HF_ENDPOINT = 'https://router.huggingface.co/hf-inference/v1/chat/completions';
+const MAX_RETRIES = 3;
 
 export class HFBackend implements LLMBackend {
   constructor(
@@ -19,7 +20,6 @@ export class HFBackend implements LLMBackend {
     temperature = 0.7,
     maxTokens?: number,
     responseFormat?: ResponseFormat,
-    // HF Inference API has no equivalent to Groq's reasoning_format; unused here.
     _reasoningFormat?: unknown,
   ): Promise<string> {
     const body: Record<string, unknown> = {
@@ -29,25 +29,36 @@ export class HFBackend implements LLMBackend {
     };
     if (maxTokens) body.max_tokens = maxTokens;
 
-    const res = await fetch(HF_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    });
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      const res = await fetch(HF_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
 
-    if (!res.ok) {
+      if (res.ok) {
+        const data = await res.json();
+        let reply: string = data.choices[0].message.content;
+        if (responseFormat?.type === 'json_object') {
+          reply = extractJson(reply);
+        }
+        return reply;
+      }
+
+      if (res.status === 429 && attempt + 1 < MAX_RETRIES) {
+        const retryAfter = res.headers.get('Retry-After');
+        const delayMs = retryAfter ? parseInt(retryAfter, 10) * 1000 : 5000;
+        await new Promise((r) => setTimeout(r, delayMs));
+        continue;
+      }
+
       const errText = await res.text();
       throw new Error(`HF Inference API error (${res.status}): ${errText}`);
     }
 
-    const data = await res.json();
-    let reply: string = data.choices[0].message.content;
-    if (responseFormat?.type === 'json_object') {
-      reply = extractJson(reply);
-    }
-    return reply;
+    throw new Error(`HF Inference API: exhausted ${MAX_RETRIES} retries`);
   }
 }

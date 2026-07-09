@@ -19,6 +19,8 @@ export type ReasoningFormat = 'raw' | 'parsed' | 'hidden';
 
 export interface LLMBackend {
   modelName(): string;
+  /** Last model name used to fulfill a chat request (useful for fallback chains). */
+  lastUsedModel?: string;
   chat(
     messages: ChatMessage[],
     temperature?: number,

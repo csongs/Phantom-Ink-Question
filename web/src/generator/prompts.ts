@@ -188,14 +188,29 @@ export const SIMULATOR_SYSTEM_PROMPT = `你正在玩「靈媒遊戲」。
 - 注音是逐格揭露的
 - 同一個注音符號的不同聲調視為不同格（ㄩ和ㄩˋ是不同的）`;
 
+/**
+ * Build a prompt for one question that asks the model to simulate ALL reveal
+ * steps and output the earliest step at which it would guess.
+ *
+ * Strategy: one LLM call per question instead of one per cell, keeping total
+ * calls ≤ 15 for a 10-question set (1 inferCategory + up to 10 questions).
+ */
 export function simulatorUserPrompt(
   categoryHint: string,
   roundNumber: number,
   history: string,
   question: string,
-  revealedBpmf: string,
-  totalCells: number,
+  cells: string[],
 ): string {
+  const stepLines = cells
+    .map((_, i) => {
+      const revealed = cells.slice(0, i + 1).join(' ');
+      const masked = cells.slice(i + 1).map(() => '▢').join(' ');
+      const display = masked ? revealed + ' ' + masked : revealed;
+      return `步驟 ${i + 1}/${cells.length}：${display}`;
+    })
+    .join('\n');
+
   return `謎底類別提示：${categoryHint}
 
 目前進度 — 第 ${roundNumber} 題：
@@ -203,20 +218,20 @@ export function simulatorUserPrompt(
 ${history}
 
 本題問題：${question}
-本題回答的注音已揭露：${revealedBpmf}
-（完整回答共 ${totalCells} 格注音）
+本題回答共 ${cells.length} 格注音。
 
----
-請輸出你的思考與猜測：
+以下是逐格揭露過程，請模擬每步驟你會不會想猜：
+
+${stepLines}
+
+請輸出你 **首次** 想猜的步驟與猜測。若所有步驟都不想猜，將 guess_step 設為 null。
 
 {
-  "current_best_guess": "你認為最可能的謎底",
-  "confidence": <0.0 到 1.0 的小數>,
-  "want_to_guess": <true 或 false>,
-  "reason": "為什麼這麼猜"
-}
-
-如果你 want_to_guess 為 true，且猜對了，遊戲結束。`;
+  "guess_step": <步驟編號 1~${cells.length} 或 null>,
+  "guess": "你猜的謎底",
+  "confidence": <0.0~1.0>,
+  "reason": "推論過程"
+}`;
 }
 
 export function answerGeneratorPrompt(seed: string, usedHint: string): string {

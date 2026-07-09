@@ -129,6 +129,7 @@ export interface FallbackOpts {
 
 export class GroqFallbackBackend implements LLMBackend {
   onEvent: (msg: string) => void;
+  lastUsedModel?: string;
   private sleep: (ms: number) => Promise<void>;
   private fetchFn: typeof fetch;
   private now: () => number;
@@ -207,6 +208,7 @@ export class GroqFallbackBackend implements LLMBackend {
       );
 
       if (outcome.kind === 'ok') {
+        this.lastUsedModel = model;
         if (i > 0) this.onEvent(`✅ 已由 ${model} 完成${i >= 2 ? '（備援模型，品質可能略降）' : ''}`);
         return outcome.reply;
       }
@@ -245,7 +247,7 @@ export class GroqFallbackBackend implements LLMBackend {
       const outcome = await this.tryModel(
         minRetry.model, conf, messages, temperature, maxTokens, responseFormat, reasoningFormat,
       );
-      if (outcome.kind === 'ok') return outcome.reply;
+      if (outcome.kind === 'ok') { this.lastUsedModel = minRetry.model; return outcome.reply; }
       if (outcome.kind === 'fatal') throw outcome.error;
     }
 

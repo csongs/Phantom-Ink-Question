@@ -2,6 +2,8 @@
 import type { GroupedQuestion } from './groupPaste';
 
 export interface Settings {
+  /** Schema version for forward-compat; bump when breaking changes are made. */
+  schemaVersion?: number;
   backend: 'groq' | 'hf';
   apiKey: string;
   model: string;
@@ -16,18 +18,23 @@ export interface Settings {
 }
 
 const STORAGE_KEY = 'phantom-ink-settings';
+const CURRENT_SCHEMA_VERSION = 1;
 
 export function loadSettings(): Settings | null {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as Settings;
+    const parsed = JSON.parse(raw) as Settings;
+    // Version mismatch → reset to avoid corrupt reads after schema changes.
+    if (parsed.schemaVersion !== CURRENT_SCHEMA_VERSION) return null;
+    return parsed;
   } catch {
     return null;
   }
 }
 
 export function saveSettings(settings: Settings): void {
+  settings.schemaVersion = CURRENT_SCHEMA_VERSION;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
 }
 
