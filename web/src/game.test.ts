@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { PhantomInkGame, buildSolverProgressText, type GameQuestion } from './game';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { PhantomInkGame, renderGame, buildSolverProgressText, type GameQuestion } from './game';
 
 function makeQuestions(): GameQuestion[] {
   return [
@@ -108,21 +108,6 @@ describe('PhantomInkGame', () => {
     expect(correct).toBe(false);
     expect(game.state.guesses).toBe(0);
   });
-
-  it('showAnswerInput sets answerBoxOpen to true', () => {
-    const game = new PhantomInkGame(makeQuestions(), '鋼琴');
-    expect(game.state.answerBoxOpen).toBe(false);
-    game.showAnswerInput();
-    expect(game.state.answerBoxOpen).toBe(true);
-  });
-
-  it('hideAnswerInput sets answerBoxOpen back to false', () => {
-    const game = new PhantomInkGame(makeQuestions(), '鋼琴');
-    game.showAnswerInput();
-    expect(game.state.answerBoxOpen).toBe(true);
-    game.hideAnswerInput();
-    expect(game.state.answerBoxOpen).toBe(false);
-  });
 });
 
 describe('buildSolverProgressText', () => {
@@ -149,5 +134,51 @@ describe('buildSolverProgressText', () => {
     );
     for (let i = 0; i < 8; i++) game.revealInk();
     expect(buildSolverProgressText(game)).toBe('Q1. Q1\nㄉㄧˋㄇㄧㄢˋ。');
+  });
+});
+
+describe('renderGame / answer input layout', () => {
+  beforeEach(() => { document.body.innerHTML = '<div id="app"></div>'; });
+
+  it('does NOT render a 🎯 提交謎底 button (input is always visible)', () => {
+    // 使用者回報:輸入框+送出按鈕永遠可見,「🎯 提交謎底」多餘。
+    const game = new PhantomInkGame(makeQuestions(), '鋼琴');
+    const root = document.getElementById('app')!;
+    renderGame(root, game, root);
+    expect(root.querySelector('[data-action="show-answer"]')).toBeNull();
+    expect(root.querySelector('#pi-answer-box.open')).toBeTruthy();
+    expect(root.querySelector('#pi-input')).toBeTruthy();
+  });
+
+  it('places the answer input above 🏳️ 放棄 button and below the action buttons', () => {
+    // 使用者要求:輸入框放在「🏳️ 放棄」正上方,「📜 完成線索 / 👁 老天有眼」下面。
+    const game = new PhantomInkGame(makeQuestions(), '鋼琴');
+    const root = document.getElementById('app')!;
+    renderGame(root, game, root);
+    const giveUp = root.querySelector('[data-action="give-up"]') as HTMLElement;
+    const input = root.querySelector('#pi-answer-box') as HTMLElement;
+    // DOM 順序:inputBox 必須在 give-up 之前。
+    expect(giveUp.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('「取消」 clears the input box (since closing is no longer meaningful)', () => {
+    const game = new PhantomInkGame(makeQuestions(), '鋼琴');
+    const root = document.getElementById('app')!;
+    renderGame(root, game, root);
+    const input = root.querySelector<HTMLInputElement>('#pi-input')!;
+    input.value = '小提琴';
+    root.querySelector<HTMLButtonElement>('[data-action="hide-answer"]')?.click();
+    expect(input.value).toBe('');
+  });
+
+  it('「送出」 submits the current input value', () => {
+    const game = new PhantomInkGame(makeQuestions(), '鋼琴');
+    const root = document.getElementById('app')!;
+    renderGame(root, game, root);
+    const input = root.querySelector<HTMLInputElement>('#pi-input')!;
+    input.value = '小提琴';
+    root.querySelector<HTMLButtonElement>('[data-action="submit-answer"]')?.click();
+    expect(game.state.guesses).toBe(1);
+    expect(game.state.ink).toBe(3); // 猜錯 +3 墨水
   });
 });

@@ -17,7 +17,6 @@ export interface GameState {
   gameOver: boolean;
   finalRevealed: boolean;
   oracleCells: Record<number, number[]>;
-  answerBoxOpen: boolean;
 }
 
 export class PhantomInkGame {
@@ -42,7 +41,6 @@ export class PhantomInkGame {
       gameOver: false,
       finalRevealed: false,
       oracleCells: {},
-      answerBoxOpen: false,
     };
   }
 
@@ -87,14 +85,6 @@ export class PhantomInkGame {
     s.revealed[questionIndex] = Math.min(pos + 1, this.questions[questionIndex].total);
     if (!s.oracleCells[questionIndex]) s.oracleCells[questionIndex] = [];
     s.oracleCells[questionIndex].push(pos);
-  }
-
-  showAnswerInput(): void {
-    this.state.answerBoxOpen = true;
-  }
-
-  hideAnswerInput(): void {
-    this.state.answerBoxOpen = false;
   }
 
   giveUp(): void {
@@ -341,8 +331,7 @@ export function renderGame(
     if (!isLast && !s.finalRevealed) {
       html += `<button class="pi-btn pi-btn-next" data-action="next-question" ${nextDisabled}>➡ 下一題</button>`;
     }
-    html += `<button class="pi-btn pi-btn-answer" data-action="show-answer">🎯 提交謎底</button>
-      <button class="pi-btn pi-btn-oracle" data-action="open-oracle" ${oracleDisabled}>👁 老天有眼</button>
+    html += `<button class="pi-btn pi-btn-oracle" data-action="open-oracle" ${oracleDisabled}>👁 老天有眼</button>
     </div>
     <div class="pi-btns-row">
       <button class="pi-btn pi-btn-finish" data-action="give-up">🏳️ 放棄／公布答案</button>
@@ -376,8 +365,12 @@ export function renderGame(
     }
     html += '</div>';
   }
+
   if (!s.gameOver) {
-    html += `<div class="pi-answer-box${s.answerBoxOpen ? ' open' : ''}" id="pi-answer-box">
+    // 謎底輸入框永遠顯示、放在「🏳️ 放棄」正上方。
+    // 原本要按「🎯 提交謎底」才開啟的彈出流程被移除 — 玩家直接在這裡打字、
+    // 旁邊按「送出」即可。結構上的小調整,UX 不變。
+    html += `<div class="pi-answer-box open" id="pi-answer-box">
       <input id="pi-input" placeholder="輸入謎底…">
       <div class="pi-answer-actions">
         <button class="pi-btn pi-btn-answer" data-action="submit-answer">送出</button>
@@ -453,13 +446,10 @@ export function renderGame(
     game.finishClues();
     renderGame(container, game, root);
   });
-  container.querySelector('[data-action="show-answer"]')?.addEventListener('click', () => {
-    game.showAnswerInput();
-    renderGame(container, game, root);
-  });
   container.querySelector('[data-action="hide-answer"]')?.addEventListener('click', () => {
-    game.hideAnswerInput();
-    renderGame(container, game, root);
+    // 「取消」= 清空輸入框(因為輸入框永遠顯示,「關閉」沒有意義)。
+    const input = container.querySelector<HTMLInputElement>('#pi-input');
+    if (input) input.value = '';
   });
   container.querySelector('[data-action="submit-answer"]')?.addEventListener('click', () => {
     const input = container.querySelector<HTMLInputElement>('#pi-input');
@@ -499,10 +489,6 @@ export function renderGame(
       new CustomEvent('pi-open-solver', { detail: buildSolverProgressText(game), bubbles: true }),
     );
   });
-
-  if (s.answerBoxOpen) {
-    container.querySelector<HTMLInputElement>('#pi-input')?.focus();
-  }
 
   container.querySelectorAll<HTMLElement>('.pi-clue-hdr').forEach((hdr) => {
     hdr.addEventListener('click', () => {
