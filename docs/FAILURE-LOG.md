@@ -21,6 +21,14 @@
 
 ## 紀錄（新的在上面）
 
+### FL-10｜2026-07-13｜貼上的題組因帶「1. 」編號前綴而全數比對不到題庫
+- **症狀**：使用者在出題模式貼上 7 組（每組 3 題）題目，每行前面帶原始編號（如「1. 它的次要材料是什麼？」），結果沒有正確解析／比對。
+- **根因**：`web/src/groupPaste.ts` 的 `parseGroupedQuestions()` 只把整行 trim 後直接當作 `text`，沒有剝除來源常見的「1. 」「1、」「(1) 」這類列表編號前綴。題庫（`QUESTION_BANK`）裡的原文沒有編號前綴，`matchToBank()` 做 `normalizeQuestion` 比對時因此永遠比對不到，全部落入 `unmatched`。這是純結構性、可枚舉的字串問題，不是語意判斷，理當用 CODE 硬擋（同 CLAUDE.md 硬規則 5 / `docs/QUESTION-QUALITY.md` 分工原則），不需要、也不應該改用 AI 解析。
+- **錯誤做法**：（無——這次直接在 code 層修正，未曾嘗試改走 AI 解析。）
+- **正確修法**：新增 `LIST_PREFIX = /^[\(（]?[0-9０-９]+[\.\)）、．]\s*/`，在把非標題行存成 `GroupedQuestion.text` 前先 `.replace(LIST_PREFIX, '')` 剝除編號前綴（`web/src/groupPaste.ts`）。`index` 仍照原設計以組內出現順序計算，不受前綴數字影響。
+- **現行防護**：`groupPaste.test.ts` 新增測試，貼入帶「1. */2. */3. 」前綴的 7 組樣式其中一段，驗證 `parseGroupedQuestions` 剝除前綴且 `matchToBank` 全數命中題庫。
+- **關鍵字**：groupPaste, 題組, 題號, 第N組, 列表編號, 1. , matchToBank, unmatched
+
 ### FL-9｜2026-07-09｜「🔄 再生一個」遭遇 fallback 換模型時,頁面被 `progressLog` 覆蓋成 AI 思考中
 - **症狀**：在 Host 模式指令頁按單題的「🔄 再生一個」,若 backend 剛好碰到 429 換桶（`⚠️ mock model 達到限速，改用下一個模型⋯⋯` 等 onEvent 訊息）,整個頁面被切換成「AI 思考中」的 loading 畫面,使用者以為按錯變成整組重新生成。
 - **根因**：`web/src/hostMode.ts` 的 `startHostGeneration()` 建立 `GroqFallbackBackend` 時傳入的 `progressLog` 閉包會 `root.innerHTML = '<loading>'` —— **這個 onEvent 在 backend 物件存續期間永遠有效**,而 `renderHostCommands()` 把 backend 物件原封不動傳給指令頁。指令頁的「再生一個」按鈕共用同一個 backend,所以單題 fallback 的 onEvent 仍然走那個 closure,把整頁面砍掉重練。

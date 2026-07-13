@@ -65,6 +65,32 @@ describe('parseGroupedQuestions', () => {
     const { errors } = parseGroupedQuestions('第 1 組\n它的用途為何？\n\n第 2 組\n它的用途為何？');
     expect(errors.some((e) => e.includes('同時出現'))).toBe(true);
   });
+
+  it('strips leading list numbering like "1. " / "1、" / "(1) " so bank matching still works', () => {
+    const raw = `第 1 組
+1. 它的次要材料是什麼？
+2. 您在一天中的何時使用它？
+3. 您在何處使用它？
+
+第 2 組
+1. 它的別名為何？
+2. 它曾出現在什麼書、電影或電視節目中？
+3. 您最有可能在何種商店找到它？`;
+    const { items, errors } = parseGroupedQuestions(raw);
+    expect(errors).toEqual([]);
+    expect(items).toEqual([
+      { group: 1, index: 1, text: '它的次要材料是什麼？' },
+      { group: 1, index: 2, text: '您在一天中的何時使用它？' },
+      { group: 1, index: 3, text: '您在何處使用它？' },
+      { group: 2, index: 1, text: '它的別名為何？' },
+      { group: 2, index: 2, text: '它曾出現在什麼書、電影或電視節目中？' },
+      { group: 2, index: 3, text: '您最有可能在何種商店找到它？' },
+    ]);
+
+    const { matched, unmatched } = matchToBank(items, QUESTION_BANK);
+    expect(unmatched).toEqual([]);
+    expect(matched).toHaveLength(6);
+  });
 });
 
 describe('matchToBank', () => {

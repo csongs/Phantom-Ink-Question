@@ -13,6 +13,9 @@ export interface GroupedQuestion {
 
 const GROUP_HEADER = /^第\s*([0-9０-９一二三四五六七八九十]+)\s*組/;
 
+/** Leading list-numbering that some paste sources prepend, e.g. "1. " / "１、" / "(1) ". */
+const LIST_PREFIX = /^[\(（]?[0-9０-９]+[\.\)）、．]\s*/;
+
 const CN_NUMS: Record<string, number> = {
   一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9,
 };
@@ -65,7 +68,7 @@ export function parseGroupedQuestions(raw: string): {
       continue;
     }
     indexInGroup++;
-    items.push({ group: currentGroup, index: indexInGroup, text: line });
+    items.push({ group: currentGroup, index: indexInGroup, text: line.replace(LIST_PREFIX, '') });
   }
 
   if (items.length === 0) errors.push('沒有解析到任何題目');
