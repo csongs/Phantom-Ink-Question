@@ -88,6 +88,23 @@ export function parseGroupedQuestions(raw: string): {
   return { items, errors };
 }
 
+/** Rebuilds "第 N 組" paste text from parsed groupTags — the inverse of
+ *  parseGroupedQuestions(). Used to restore the paste textarea from saved
+ *  state (e.g. when re-entering a setup screen after generation). */
+export function rebuildPasteText(groupTags: GroupedQuestion[]): string {
+  const lines: string[] = [];
+  let currentGroup = 0;
+  for (const tag of groupTags) {
+    if (tag.group !== currentGroup) {
+      lines.push(`第 ${tag.group} 組`);
+      currentGroup = tag.group;
+    }
+    const text = tag.text.endsWith('？') || tag.text.endsWith('?') ? tag.text : `${tag.text}？`;
+    lines.push(text);
+  }
+  return lines.join('\n');
+}
+
 export interface BankMatchResult {
   /** Questions found in the bank — bankQuestion is the bank's exact text. */
   matched: { bankQuestion: string; tag: GroupedQuestion }[];

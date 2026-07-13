@@ -16,7 +16,7 @@
 // - 編輯 top-bar / 卡片欄位只局部更新對應的 cmd-line-X，focus 不會被吃掉。
 import { escapeHtml } from './game';
 import { loadSettings, saveSettings, type Settings } from './settings';
-import { parseGroupedQuestions, matchToBank, normalizeQuestion } from './groupPaste';
+import { normalizeQuestion, type GroupedQuestion } from './groupPaste';
 import { toBopomofo, toBopomofoCells } from './bopomofo';
 import { buildClueCommand } from './hostCommands';
 import type { LLMBackend } from './backends/shared';
@@ -25,6 +25,7 @@ import { GroqFallbackBackend } from './backends/fallbackGroq';
 import { HFBackend, HF_DEFAULT_MODEL } from './backends/hf';
 import { PhantomInkGenerator } from './generator/generator';
 import { renderToolsMenu } from './toolsMenu';
+import { renderQuestionSetup, readQuestionSetup, type QuestionSetupValue } from './questionSetup';
 
 // ── Host-mode state (ephemeral, not persisted) ──
 
@@ -131,19 +132,16 @@ function renderHomePlayerScreen(root: HTMLElement, _settings: Settings): void {
 
 /**
  * Render the host-mode setup screen.
- * `pasteText` (optional) pre-fills the group-paste textarea — used by R7 to
- * restore the user's last paste when they hit "🔄 重新生成整組" on the
- * command page. If neither is supplied, falls back to rebuilding from
- * `existing.groupTags`.
  *
  * 結構：API Key + Backend/Model + 謎底模式 + 題目id + 指令前綴 +
- *       兩種輸入方式（從題庫挑題 / 貼上題組）+ 生成鈕。
- *       兩種輸入在 generate 時合併（題庫勾選 + 自訂 + 貼上解析後的題目）。
+ *       共用的 `renderQuestionSetup`（題庫挑題 / 自訂問題 / 貼上題組，
+ *       與玩家模式共用同一個元件，見 questionSetup.ts）+ 生成鈕。
+ *       貼上題組的文字會由 groupTags 自動還原（見 questionSetup.ts），
+ *       不需要另外傳遞。
  */
 export function renderHostSetup(
   root: HTMLElement,
   existing: Settings | null,
-  pasteText?: string,
 ): void {
   const apiKey = escapeHtml(existing?.apiKey ?? '');
   const model = escapeHtml(existing?.model ?? '');
@@ -154,15 +152,9 @@ export function renderHostSetup(
   const aiChecked = answerMode === 'ai' ? 'checked' : '';
   const humanChecked = answerMode === 'human' ? 'checked' : '';
   const humanVisible = answerMode === 'human' ? 'style="display:block"' : 'style="display:none"';
-  // R7: prefer the paste passed in (regen-all → same session); otherwise
-  // rebuild from saved groupTags so the textarea is never blank after a regen.
-  const initialPaste = pasteText
-    ?? (existing?.groupTags && existing.groupTags.length > 0
-      ? rebuildPasteText(existing.groupTags)
-      : '');
 
   // 合併勾選題庫 + 自訂問題（兩種入口的並集）
-  const initialPicked = new Set(existing?.pickedBankQuestions ?? []);
+  const initialPicked = existing?.pickedBankQuestions ?? [];
   const initialCustom = existing?.customQuestions ?? [];
 
   // 從現有 groupTags 抽出「未匹配題庫」的自訂題目,確保它們也出現在自訂問題列表
@@ -171,20 +163,11 @@ export function renderHostSetup(
     : [];
   const allCustoms = Array.from(new Set([...initialCustom, ...customsFromTags]));
 
-  const bankItems = QUESTION_BANK.map(
-    (q) =>
-      `<label class="pi-bank-item"><input type="checkbox" value="${escapeHtml(q)}" ${
-        initialPicked.has(q) ? 'checked' : ''
-      }> ${escapeHtml(q)}</label>`,
-  ).join('');
-
-  const customRows = allCustoms.map(
-    (c) => `<div class="pi-custom-row"><input type="text" class="pi-custom-input" value="${escapeHtml(c)}" placeholder="輸入自訂問題"><button type="button" class="pi-custom-remove">✕</button></div>`,
-  ).join('');
-
-  // 題數預設值:以已存在的 groupTags 數量為主(若無則用 10)
+  // 題數預設值:以已存在的 groupTags 數量為主(若無則用 10)。
+  // 注意:出題者模式所有題目皆為強制使用,這兩個欄位不影響實際生成邏輯
+  // (見 startHostGeneration 的 numQuestions = allItems.length),純供共用元件顯示。
   const initialNumQuestions = existing?.groupTags?.length ?? 10;
-  const initialNumCandidates = initialPicked.size + allCustoms.length + 5;
+  const initialNumCandidates = initialPicked.length + allCustoms.length + 5;
 
   root.innerHTML = `
     <div class="pi-settings open">
@@ -240,36 +223,8 @@ export function renderHostSetup(
         <input id="pi-cmd-prefix-custom" type="text" placeholder="自訂前綴" style="margin-top:4px;display:${![ 'ghostink', 'phantomink' ].includes(cmdPrefix) ? 'block' : 'none'};" value="${![ 'ghostink', 'phantomink' ].includes(cmdPrefix) ? escapeHtml(cmdPrefix) : ''}">
       </div>
 
-      <div class="pi-settings-group">
-        <label>選題數量（給AI挑的候選池）</label>
-        <input id="pi-host-num-candidates" type="number" min="1" value="${initialNumCandidates}">
-        <label>使用題數量（遊戲最終題數）</label>
-        <input id="pi-host-num-questions" type="number" min="1" value="${initialNumQuestions}">
-
-        <div class="pi-bank-header">
-          <span class="pi-bank-toggle" tabindex="0" role="button">▶ 從題庫挑題（勾選=強制使用）</span>
-          <span class="pi-bank-count">已選 ${initialPicked.size}</span>
-          <button type="button" class="pi-bank-clear" style="display:${initialPicked.size > 0 ? '' : 'none'};">清除</button>
-        </div>
-        <div class="pi-bank-body">
-          <input class="pi-bank-search" type="text" placeholder="🔍 搜尋題目...">
-          <div class="pi-bank-list">${bankItems}</div>
-        </div>
-      </div>
-
-      <div class="pi-settings-group">
-        <label>自訂問題（強制使用，AI 填答案）</label>
-        <div class="pi-custom-list">${customRows}</div>
-        <button type="button" class="pi-custom-add">＋ 新增自訂問題</button>
-      </div>
-
-      <div class="pi-settings-group">
-        <label>貼上題組（會自動勾選題庫並記住組別編號）</label>
-        <p style="font-size:12px;color:var(--pi-text-faint);margin:4px 0 8px;">格式：一組一行「第 N 組」標題，以下逐行列題目文字。</p>
-        <div id="pi-host-parse-status" style="font-size:13px;color:var(--pi-text-dim);margin-bottom:4px;"></div>
-        <textarea id="pi-host-paste" class="pi-group-paste" rows="6" placeholder="第 1 組&#10;它會去哪裡？&#10;它存放在哪裡？&#10;&#10;第 2 組&#10;它的重量和什麼相仿？"></textarea>
-        <div id="pi-host-parse-result" style="font-size:13px;margin-top:4px;"></div>
-      </div>
+      <div id="pi-host-question-setup"></div>
+      <div id="pi-host-warning" class="pi-setup-warning"></div>
 
       <p class="pi-privacy-note">Key 只存在你目前這台裝置的瀏覽器裡，不會送到任何伺服器。</p>
 
@@ -279,56 +234,15 @@ export function renderHostSetup(
     </div>
   `;
 
-  // Pre-fill paste (R7) BEFORE wiring updateParseStatus so the initial status reflects it.
-  if (initialPaste) {
-    const pasteArea = document.getElementById('pi-host-paste') as HTMLTextAreaElement | null;
-    if (pasteArea) pasteArea.value = initialPaste;
-  }
-
-  function updateBankCount() {
-    const checked = document.querySelectorAll<HTMLInputElement>('.pi-bank-list .pi-bank-item input:checked');
-    const counter = document.querySelector<HTMLElement>('.pi-bank-count');
-    if (counter) counter.textContent = `已選 ${checked.length}`;
-    const clearBtn = document.querySelector<HTMLElement>('.pi-bank-clear');
-    if (clearBtn) clearBtn.style.display = checked.length > 0 ? '' : 'none';
-  }
-
-  function updateParseStatus() {
-    const pasteArea = document.getElementById('pi-host-paste') as HTMLTextAreaElement | null;
-    const statusEl = document.getElementById('pi-host-parse-status');
-    const resultEl = document.getElementById('pi-host-parse-result');
-    if (!pasteArea || !statusEl || !resultEl) return;
-    const raw = pasteArea.value.trim();
-    if (!raw) {
-      statusEl.textContent = '';
-      resultEl.innerHTML = '';
-      return;
-    }
-    const parsed = parseGroupedQuestions(raw);
-    const matched = matchToBank(parsed.items, QUESTION_BANK);
-    const total = parsed.items.length;
-    const matchedCount = matched.matched.length;
-    const errors = parsed.errors;
-    let html = '';
-    if (errors.length) {
-      html += `<div style="color:var(--pi-danger);font-size:12px;">${errors.join('<br>')}</div>`;
-    }
-    html += `<div style="font-size:12px;color:var(--pi-text-dim);">解析到 ${total} 題，${matchedCount} 題匹配題庫，${total - matchedCount} 題自訂</div>`;
-    resultEl.innerHTML = html;
-    statusEl.textContent = total > 0 ? `✅ ${total} 題` : '⚠️ 尚未貼上題組';
-  }
-
-  function readMergedInputs(): { picked: string[]; custom: string[]; rawPaste: string } {
-    const picked = Array.from(
-      document.querySelectorAll<HTMLInputElement>('.pi-bank-list .pi-bank-item input:checked'),
-    ).map((cb) => cb.value);
-    const custom = Array.from(
-      document.querySelectorAll<HTMLInputElement>('.pi-custom-list .pi-custom-input'),
-    )
-      .map((inp) => inp.value.trim())
-      .filter((v) => v.length > 0);
-    const rawPaste = (document.getElementById('pi-host-paste') as HTMLTextAreaElement)?.value.trim() ?? '';
-    return { picked, custom, rawPaste };
+  const setupContainer = document.getElementById('pi-host-question-setup');
+  if (setupContainer) {
+    renderQuestionSetup(setupContainer, {
+      numCandidates: initialNumCandidates,
+      numQuestions: initialNumQuestions,
+      pickedBankQuestions: initialPicked,
+      customQuestions: allCustoms,
+      groupTags: existing?.groupTags,
+    }, { mode: 'host' });
   }
 
   // Delegated handlers — never re-attached after innerHTML changes.
@@ -345,50 +259,10 @@ export function renderHostSetup(
     if (prefixCustom) prefixCustom.style.display = prefixSelect.value === '__custom__' ? 'block' : 'none';
   });
 
-  // Bank section — matches the player-mode UI (toggle/collapse/search/clear).
-  const bankToggle = document.querySelector<HTMLElement>('.pi-bank-toggle');
-  const bankBody = document.querySelector<HTMLElement>('.pi-bank-body');
-  bankToggle?.addEventListener('click', () => bankBody?.classList.toggle('open'));
-  const bankSearch = document.querySelector<HTMLInputElement>('.pi-bank-search');
-  bankSearch?.addEventListener('input', () => {
-    const term = bankSearch.value.trim();
-    document.querySelectorAll<HTMLElement>('.pi-bank-list .pi-bank-item').forEach((item) => {
-      item.style.display = item.textContent?.includes(term) ? '' : 'none';
-    });
-  });
-  document.querySelector('.pi-bank-list')?.addEventListener('change', updateBankCount);
-  document.querySelector('.pi-bank-clear')?.addEventListener('click', () => {
-    // 「清除」= 一鍵回到空白狀態：題庫勾選、自訂問題、貼上題組、解析狀態全清。
-    document.querySelectorAll<HTMLInputElement>('.pi-bank-list .pi-bank-item input').forEach((cb) => { cb.checked = false; });
-    const customList = document.querySelector('.pi-custom-list');
-    if (customList) customList.innerHTML = '';
-    const pasteArea = document.getElementById('pi-host-paste') as HTMLTextAreaElement | null;
-    if (pasteArea) pasteArea.value = '';
-    const statusEl = document.getElementById('pi-host-parse-status');
-    if (statusEl) statusEl.textContent = '';
-    const resultEl = document.getElementById('pi-host-parse-result');
-    if (resultEl) resultEl.innerHTML = '';
-    updateBankCount();
-  });
-
-  // Custom questions — add via event delegation so newly added rows also work.
-  const customList = document.querySelector('.pi-custom-list');
-  document.querySelector('.pi-custom-add')?.addEventListener('click', () => {
-    if (!customList) return;
-    customList.insertAdjacentHTML('beforeend', `<div class="pi-custom-row"><input type="text" class="pi-custom-input" value="" placeholder="輸入自訂問題"><button type="button" class="pi-custom-remove">✕</button></div>`);
-  });
-  customList?.addEventListener('click', (e) => {
-    const btn = (e.target as HTMLElement).closest('.pi-custom-remove');
-    if (btn) btn.closest('.pi-custom-row')?.remove();
-  });
-
-  document.getElementById('pi-host-paste')?.addEventListener('input', updateParseStatus);
-  updateParseStatus();
-  updateBankCount();
-
   document.getElementById('pi-host-generate')?.addEventListener('click', () => {
-    const merged = readMergedInputs();
-    void startHostGeneration(root, merged);
+    if (!setupContainer) return;
+    const setup = readQuestionSetup(setupContainer);
+    void startHostGeneration(root, setup);
   });
 
   document.getElementById('pi-host-back')?.addEventListener('click', (e) => {
@@ -399,13 +273,7 @@ export function renderHostSetup(
 
 // ── Generation ──
 
-interface HostInputs {
-  picked: string[];
-  custom: string[];
-  rawPaste: string;
-}
-
-async function startHostGeneration(root: HTMLElement, inputs: HostInputs): Promise<void> {
+async function startHostGeneration(root: HTMLElement, setup: QuestionSetupValue): Promise<void> {
   const backend = (document.getElementById('pi-backend') as HTMLSelectElement)?.value as 'groq' | 'hf' || 'groq';
   const apiKey = (document.getElementById('pi-apikey') as HTMLInputElement)?.value.trim();
   const model = (document.getElementById('pi-model') as HTMLInputElement)?.value.trim();
@@ -422,43 +290,28 @@ async function startHostGeneration(root: HTMLElement, inputs: HostInputs): Promi
   }
 
   // 合併三路輸入：
-  //   1) 題庫勾選（精準）   2) 自訂問題   3) 貼上題組解析後的非題庫題
-  // 貼上的題庫題「不」再加進 picked（題庫勾選已被視為唯一真相）,但保留組別。
-  // 為了與舊版相容：把 picked / custom / groupTags 都存進 settings,後續指令頁
-  // 用 groupTags 計算題組/選項編號。
-  const allItems: { group: number; index: number; text: string }[] = [];
-  const matchedTexts = new Set<string>();
+  //   1) 貼上題組解析後的題目（groupTags，含題庫題與自訂題）
+  //   2) 題庫勾選中「沒在貼上區出現」的
+  //   3) 自訂問題中「沒在貼上區出現」的
+  // 貼上題組已由共用元件（questionSetup.ts）解析並記在 groupTags，
+  // 不用再重新 parse 一次。
+  const allItems: GroupedQuestion[] = [...(setup.groupTags ?? [])];
 
-  // 從貼上區抽出 groupTags（給指令頁用）
-  if (inputs.rawPaste) {
-    const parsed = parseGroupedQuestions(inputs.rawPaste);
-    const matched = matchToBank(parsed.items, QUESTION_BANK);
-    for (let i = 0; i < parsed.items.length; i++) {
-      const item = parsed.items[i];
-      const wasMatched = matched.matched.some((m) => m.bankQuestion === item.text);
-      if (wasMatched) matchedTexts.add(item.text);
-      allItems.push(item);
-    }
-  }
-
-  // 把題庫勾選中「沒在貼上區出現」的當作新題目,塞到第 0 組開頭（無組別卡,使用者手動補）
   let counter = 1;
-  for (const q of inputs.picked) {
+  for (const q of setup.pickedBankQuestions) {
     if (!allItems.find((it) => normalizeQuestion(it.text) === normalizeQuestion(q))) {
       allItems.push({ group: 0, index: counter++, text: q });
     }
   }
-
-  // 把自訂問題同樣加進去
-  for (const q of inputs.custom) {
+  for (const q of setup.customQuestions) {
     if (!allItems.find((it) => normalizeQuestion(it.text) === normalizeQuestion(q))) {
       allItems.push({ group: 0, index: counter++, text: q });
     }
   }
 
   if (allItems.length === 0) {
-    const status = document.getElementById('pi-host-parse-status');
-    if (status) status.innerHTML = '<span style="color:var(--pi-danger);">⚠️ 請至少勾選題庫、新增自訂題、或貼上題組</span>';
+    const warn = document.getElementById('pi-host-warning');
+    if (warn) warn.textContent = '⚠️ 請至少勾選題庫、新增自訂題、或貼上題組';
     return;
   }
   if (!hostQuestionId) {
@@ -469,11 +322,11 @@ async function startHostGeneration(root: HTMLElement, inputs: HostInputs): Promi
 
   // 計算給 generator 的題庫題目 + 自訂題目
   const pickedBankQuestions = Array.from(new Set([
-    ...inputs.picked,
+    ...setup.pickedBankQuestions,
     ...allItems.filter((it) => QUESTION_BANK.includes(it.text)).map((it) => it.text),
   ]));
   const customQuestions = Array.from(new Set([
-    ...inputs.custom,
+    ...setup.customQuestions,
     ...allItems.filter((it) => !QUESTION_BANK.includes(it.text)).map((it) => it.text),
   ]));
 
@@ -527,7 +380,7 @@ async function startHostGeneration(root: HTMLElement, inputs: HostInputs): Promi
     }
     const usedModel = llm.lastUsedModel;
     if (usedModel) progressLog(`🤖 本次由 ${usedModel} 完成`);
-    renderHostCommands(root, result.questions, result.answer, hostQuestionId, cmdPrefix, allItems, usedModel, llm, inputs.rawPaste);
+    renderHostCommands(root, result.questions, result.answer, hostQuestionId, cmdPrefix, allItems, usedModel, llm);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     logLines.push(`❌ ${msg}`);
@@ -542,7 +395,7 @@ async function startHostGeneration(root: HTMLElement, inputs: HostInputs): Promi
         <div class="pi-log-body open">${logLines.map((l) => `<div class="pi-log-line">${escapeHtml(l)}</div>`).join('')}</div>
       </div>
     `;
-    document.getElementById('pi-host-retry')?.addEventListener('click', () => renderHostSetup(root, loadSettings(), inputs.rawPaste));
+    document.getElementById('pi-host-retry')?.addEventListener('click', () => renderHostSetup(root, loadSettings()));
     document.getElementById('pi-host-back')?.addEventListener('click', () => renderHomeMenu(root));
   }
 }
@@ -621,8 +474,6 @@ export function renderHostCommands(
   tags: { group: number; index: number; text: string }[],
   usedModel?: string,
   llm?: LLMBackend,
-  /** R7 — paste text to restore if the user later clicks 重新生成整組. */
-  pasteText?: string,
 ): void {
   const tagByNorm = new Map(tags.map((t) => [normalizeQuestion(t.text), t]));
   const rawCards: HostCard[] = questions.map((q) => {
@@ -823,11 +674,7 @@ export function renderHostCommands(
   }
 
   function onRegenerateAll() {
-    if (!pasteText) {
-      renderHostSetup(root, loadSettings());
-      return;
-    }
-    renderHostSetup(root, loadSettings(), pasteText);
+    renderHostSetup(root, loadSettings());
   }
 
   function onBackToHome(e: Event) {
@@ -917,17 +764,3 @@ export function renderHostCommands(
   renderFullPage();
 }
 
-/** Rebuild the paste-area text from saved groupTags (R7). Group 1 lines, then 2, etc. */
-export function rebuildPasteText(groupTags: { group: number; index: number; text: string }[]): string {
-  const lines: string[] = [];
-  let currentGroup = 0;
-  for (const tag of groupTags) {
-    if (tag.group !== currentGroup) {
-      lines.push(`第 ${tag.group} 組`);
-      currentGroup = tag.group;
-    }
-    const text = tag.text.endsWith('？') || tag.text.endsWith('?') ? tag.text : `${tag.text}？`;
-    lines.push(text);
-  }
-  return lines.join('\n');
-}

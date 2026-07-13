@@ -21,6 +21,14 @@
 
 ## 紀錄（新的在上面）
 
+### FL-11｜2026-07-13｜出題者模式手刻複製了一份題庫/自訂題/貼上題組 UI，功能新增只顧到玩家模式
+- **症狀**：使用者要求的「一鍵清除」功能加到玩家模式後，出題者模式沒有同步出現（雖然這次追查發現兩邊其實都各自有一份「清除」按鈕，但那是巧合式的手動搬移，不是共用元件——下一個類似需求大機率會再漏)。
+- **根因**：玩家模式的題庫勾選／自訂問題／貼上題組／清除，早就抽成共用元件 `questionSetup.ts` 的 `renderQuestionSetup()`（含 `mode: 'host' | 'player'` 參數）。但 `hostMode.ts` 的 `renderHostSetup()` 從未呼叫這個共用元件，而是自己手刻了一份幾乎一樣的 HTML／事件綁定（有自己的 `#pi-host-paste`、`#pi-host-num-candidates` 等 ID），連程式碼註解都寫著「matches the player-mode UI」——即承認是手動複製，不是共用。這種「兩份平行實作、靠人工保持同步」的架構，任何一邊加功能都必須記得手動搬到另一邊，遲早會漏。
+- **錯誤做法**：（無——這次是使用者主動指出维護痛點，直接動手整合，沒有先繞路。）
+- **正確修法**：`hostMode.ts` 的 `renderHostSetup()` 改為在一個佔位 `<div id="pi-host-question-setup">` 內呼叫共用的 `renderQuestionSetup(container, initial, { mode: 'host' })`，讀值改用共用的 `readQuestionSetup()`。連帶簡化：貼上題組文字的還原邏輯（原本 R7 的 `rebuildPasteText` + `pasteText` 參數層層傳遞）搬進 `groupPaste.ts`／`questionSetup.ts`，讓共用元件自己根據 `initial.groupTags` 還原文字框內容，`renderHostSetup`/`renderHostCommands` 因此可以整個拿掉 `pasteText` 參數。`startHostGeneration` 也不用再重新 `parseGroupedQuestions(rawPaste)`，直接讀共用元件回傳的 `groupTags`。
+- **現行防護**：`questionSetup.test.ts`（清除、貼上還原、host/player 模式差異）是兩模式共用的測試——之後任一模式改壞這段行為，兩邊的呼叫方都會一起被測到。`hostMode.test.ts` 改為輕量整合測試（確認 `renderHostSetup` 有把共用元件掛進去），不再重複測清除邏輯本身。
+- **關鍵字**：出題者模式, 玩家模式, 共用元件, renderQuestionSetup, 清除, 重複實作, groupPaste, rebuildPasteText, 維護同步
+
 ### FL-10｜2026-07-13｜貼上的題組因帶「1. 」編號前綴而全數比對不到題庫
 - **症狀**：使用者在出題模式貼上 7 組（每組 3 題）題目，每行前面帶原始編號（如「1. 它的次要材料是什麼？」），結果沒有正確解析／比對。
 - **根因**：`web/src/groupPaste.ts` 的 `parseGroupedQuestions()` 只把整行 trim 後直接當作 `text`，沒有剝除來源常見的「1. 」「1、」「(1) 」這類列表編號前綴。題庫（`QUESTION_BANK`）裡的原文沒有編號前綴，`matchToBank()` 做 `normalizeQuestion` 比對時因此永遠比對不到，全部落入 `unmatched`。這是純結構性、可枚舉的字串問題，不是語意判斷，理當用 CODE 硬擋（同 CLAUDE.md 硬規則 5 / `docs/QUESTION-QUALITY.md` 分工原則），不需要、也不應該改用 AI 解析。

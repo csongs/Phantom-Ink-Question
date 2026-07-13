@@ -8,7 +8,6 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   renderHostCommands,
   renderHostSetup,
-  rebuildPasteText,
 } from './hostMode';
 import type { Settings } from './settings';
 import type { ChatMessage, LLMBackend, ReasoningFormat, ResponseFormat } from './backends/shared';
@@ -341,9 +340,15 @@ describe('hostMode / renderHostCommands', () => {
   });
 });
 
-describe('hostMode / renderHostSetup — 清除按鈕', () => {
-  it('wipes everything: bank checks, custom list, paste textarea, parse status', () => {
-    // 使用者要求「清除」必須把貼上題組都清空 — 不只清題庫勾選。
+// renderHostSetup now delegates its bank-picker / custom-question / paste /
+// 清除 UI to the shared `renderQuestionSetup` component (questionSetup.ts),
+// the same one player mode uses — so that a feature added to one mode
+// (e.g. the 清除 button) can no longer silently miss the other. The
+// component's own behavior (清除, paste-parsing, validity) is covered by
+// questionSetup.test.ts; the tests below just confirm renderHostSetup wires
+// it in correctly with host-mode's existing state.
+describe('hostMode / renderHostSetup — shared question-setup integration', () => {
+  it('renders the shared question-setup component (bank picker + custom + paste + 清除)', () => {
     const existing: Partial<Settings> = {
       groupTags: [{ group: 1, index: 1, text: '提到它，最先閃過您腦海的是哪個字詞？' }],
       pickedBankQuestions: ['提到它，最先閃過您腦海的是哪個字詞？'],
@@ -353,44 +358,13 @@ describe('hostMode / renderHostSetup — 清除按鈕', () => {
     document.body.appendChild(el);
     renderHostSetup(el, existing as Settings);
 
-    // Sanity: pre-fill paste textarea triggers updateParseStatus too.
-    const paste = el.querySelector<HTMLTextAreaElement>('#pi-host-paste')!;
-    expect(paste.value).toContain('提到它');
     expect(el.querySelectorAll('.pi-bank-item input:checked').length).toBeGreaterThan(0);
     expect(el.querySelectorAll('.pi-custom-row').length).toBe(2);
-    expect(el.querySelector('#pi-host-parse-status')?.textContent).not.toBe('');
-
-    // Click 清除.
-    el.querySelector<HTMLButtonElement>('.pi-bank-clear')?.click();
-
-    expect(el.querySelectorAll('.pi-bank-item input:checked').length).toBe(0);
-    expect(el.querySelectorAll('.pi-custom-row').length).toBe(0);
-    expect(el.querySelector<HTMLTextAreaElement>('#pi-host-paste')?.value).toBe('');
-    expect(el.querySelector('#pi-host-parse-status')?.textContent).toBe('');
-    expect(el.querySelector('#pi-host-parse-result')?.innerHTML).toBe('');
-  });
-});
-
-describe('hostMode / rebuildPasteText', () => {
-  it('rebuilds 第 N 組 headers and lines from groupTags (R7)', () => {
-    const out = rebuildPasteText([
-      { group: 1, index: 1, text: '它會去哪裡' },
-      { group: 1, index: 2, text: '它存放在哪裡' },
-      { group: 2, index: 1, text: '它是什麼' },
-    ]);
-    expect(out).toBe(
-      '第 1 組\n它會去哪裡？\n它存放在哪裡？\n第 2 組\n它是什麼？',
-    );
+    expect(el.querySelector<HTMLTextAreaElement>('.pi-group-paste')?.value).toContain('提到它');
+    expect(el.querySelector('.pi-bank-clear')).toBeTruthy();
   });
 
-  it('does not double-append ？ if the text already ends with ？', () => {
-    const out = rebuildPasteText([{ group: 1, index: 1, text: '它會去哪裡？' }]);
-    expect(out).toBe('第 1 組\n它會去哪裡？');
-  });
-});
-
-describe('hostMode / renderHostSetup — R7 paste restoration', () => {
-  it('rebuilds the paste textarea from groupTags when no live pasteText is given', () => {
+  it('rebuilds the paste textarea from groupTags (so re-entering setup never starts blank)', () => {
     const existing: Partial<Settings> = {
       groupTags: [
         { group: 1, index: 1, text: '它會去哪裡' },
@@ -398,20 +372,9 @@ describe('hostMode / renderHostSetup — R7 paste restoration', () => {
       ],
     };
     const el = mountSetup(existing as Settings);
-    const paste = el.querySelector<HTMLTextAreaElement>('#pi-host-paste');
+    const paste = el.querySelector<HTMLTextAreaElement>('.pi-group-paste');
     expect(paste?.value).toContain('第 1 組');
     expect(paste?.value).toContain('它會去哪裡？');
     expect(paste?.value).toContain('第 2 組');
-  });
-
-  it('prefers an explicit pasteText argument over groupTags', () => {
-    const existing: Partial<Settings> = {
-      groupTags: [{ group: 1, index: 1, text: '舊資料' }],
-    };
-    const el = document.createElement('div');
-    document.body.appendChild(el);
-    renderHostSetup(el, existing as Settings, '第 9 組\n全新資料？');
-    const paste = el.querySelector<HTMLTextAreaElement>('#pi-host-paste');
-    expect(paste?.value).toBe('第 9 組\n全新資料？');
   });
 });

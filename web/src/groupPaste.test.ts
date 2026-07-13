@@ -1,6 +1,6 @@
 // web/src/groupPaste.test.ts
 import { describe, it, expect } from 'vitest';
-import { parseGroupedQuestions, matchToBank, normalizeQuestion } from './groupPaste';
+import { parseGroupedQuestions, matchToBank, normalizeQuestion, rebuildPasteText } from './groupPaste';
 import { QUESTION_BANK } from './generator/prompts';
 
 const SAMPLE = `第 1 組
@@ -117,5 +117,21 @@ describe('normalizeQuestion', () => {
   it('strips spaces and trailing question marks', () => {
     expect(normalizeQuestion('它 存放在哪裡？')).toBe('它存放在哪裡');
     expect(normalizeQuestion('它存放在哪裡?')).toBe('它存放在哪裡');
+  });
+});
+
+describe('rebuildPasteText', () => {
+  it('rebuilds 第 N 組 headers and lines from groupTags (inverse of parseGroupedQuestions)', () => {
+    const out = rebuildPasteText([
+      { group: 1, index: 1, text: '它會去哪裡' },
+      { group: 1, index: 2, text: '它存放在哪裡' },
+      { group: 2, index: 1, text: '它是什麼' },
+    ]);
+    expect(out).toBe('第 1 組\n它會去哪裡？\n它存放在哪裡？\n第 2 組\n它是什麼？');
+  });
+
+  it('does not double-append ？ if the text already ends with ？', () => {
+    const out = rebuildPasteText([{ group: 1, index: 1, text: '它會去哪裡？' }]);
+    expect(out).toBe('第 1 組\n它會去哪裡？');
   });
 });

@@ -1,4 +1,4 @@
-import { parseGroupedQuestions, matchToBank, type GroupedQuestion } from './groupPaste';
+import { parseGroupedQuestions, matchToBank, rebuildPasteText, type GroupedQuestion } from './groupPaste';
 import { QUESTION_BANK } from './generator/prompts';
 import { validateQuestionSetup } from './settings';
 import { escapeHtml } from './game';
@@ -26,6 +26,11 @@ export function renderQuestionSetup(
   const picked = new Set(initial.pickedBankQuestions ?? []);
   const customs = initial.customQuestions ?? [];
   const showGroupPaste = options.mode === 'host';
+  // Restore the paste textarea from saved groupTags (e.g. re-entering setup
+  // after a generation) so the user never has to re-paste from scratch.
+  const initialPasteText = showGroupPaste && initial.groupTags?.length
+    ? rebuildPasteText(initial.groupTags)
+    : '';
 
   const bankItems = QUESTION_BANK.map(
     (q) =>
@@ -45,7 +50,7 @@ export function renderQuestionSetup(
 
       <div class="pi-group-paste-area"${showGroupPaste ? '' : ' style="display:none"'}>
         <label>貼上題組（自動勾選題庫並記住組別編號）</label>
-        <textarea class="pi-group-paste" rows="5" placeholder="第 1 組&#10;如果暫時沒有它，可以用什麼替代？&#10;有什麼東西的危險程度與它相仿？&#10;⋯"></textarea>
+        <textarea class="pi-group-paste" rows="5" placeholder="第 1 組&#10;如果暫時沒有它，可以用什麼替代？&#10;有什麼東西的危險程度與它相仿？&#10;⋯">${escapeHtml(initialPasteText)}</textarea>
         <button type="button" class="pi-group-parse">解析並勾選</button>
         <div class="pi-group-result"></div>
       </div>

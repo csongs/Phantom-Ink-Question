@@ -83,4 +83,17 @@ describe('questionSetup', () => {
     expect(pasteArea.style.display).not.toBe('none');
     expect(el.querySelector('.pi-group-paste')).toBeTruthy();
   });
+
+  it('restores the paste textarea from groupTags in host mode (so re-entering setup never starts blank)', () => {
+    const el = mount({
+      groupTags: [
+        { group: 1, index: 1, text: '它會去哪裡' },
+        { group: 2, index: 1, text: '它是什麼' },
+      ],
+    }, { mode: 'host' });
+    const paste = el.querySelector<HTMLTextAreaElement>('.pi-group-paste');
+    expect(paste?.value).toContain('第 1 組');
+    expect(paste?.value).toContain('它會去哪裡？');
+    expect(paste?.value).toContain('第 2 組');
+  });
 });
